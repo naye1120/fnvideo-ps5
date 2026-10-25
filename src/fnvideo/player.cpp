@@ -442,11 +442,12 @@ static bool track_lang_is_chinese(const SubtitleTrack &track)
         return true;
     }
     const std::string hay = track.language + track.title;
-    return hay.find("\xe4\xb8\xad\xe6\x96\x87") != std::string::npos // 中文
+    return hay.find("\xe4\xb8\xad\xe6\x96\x87") != std::string::npos    // 中文
            || hay.find("\xe5\x9b\xbd\xe8\xaf\xad") != std::string::npos // 国语
            || hay.find("\xe7\xb2\xa4\xe8\xaf\xad") != std::string::npos // 粤语
-           || hay.find("Chinese") != std::string::npos || hay.find("chinese") != std::string::npos ||
-           hay.find("Chs") != std::string::npos || hay.find("Chi") != std::string::npos;
+           || hay.find("Chinese") != std::string::npos ||
+           hay.find("chinese") != std::string::npos || hay.find("Chs") != std::string::npos ||
+           hay.find("Chi") != std::string::npos;
 }
 
 bool Player::start(const std::string &url, const std::vector<std::string> &headers,
@@ -672,8 +673,7 @@ void Player::seek(int seconds)
     {
         // Mid-debounce: just move the target and extend the window.
         pending_seek_target_.store(seconds, std::memory_order_relaxed);
-        pending_seek_deadline_us_.store(sys::monotonic_us() + 400'000,
-                                        std::memory_order_relaxed);
+        pending_seek_deadline_us_.store(sys::monotonic_us() + 400'000, std::memory_order_relaxed);
         return;
     }
     if (state() == PlayState::ended)
@@ -699,8 +699,7 @@ void Player::seek(int seconds)
     // Playing: enter the settle window.
     seek_debounce_paused_.store(true, std::memory_order_relaxed);
     pending_seek_target_.store(seconds, std::memory_order_relaxed);
-    pending_seek_deadline_us_.store(sys::monotonic_us() + 400'000,
-                                    std::memory_order_relaxed);
+    pending_seek_deadline_us_.store(sys::monotonic_us() + 400'000, std::memory_order_relaxed);
     pause();
 }
 
@@ -797,28 +796,30 @@ bool Player::set_external_subtitle(const std::string &bytes, const std::string &
         std::size_t pos;
     } reader{reinterpret_cast<const std::uint8_t *>(text.data()), text.size(), 0};
 
-    const auto io_read = +[](void *opaque, std::uint8_t *buf, int buf_size) -> int {
+    const auto io_read = +[](void *opaque, std::uint8_t *buf, int buf_size) -> int
+    {
         Reader *r = static_cast<Reader *>(opaque);
         if (buf_size <= 0)
         {
             return 0;
         }
         const std::size_t remaining = r->size - r->pos;
-        const int n = static_cast<int>(
-            std::min<std::size_t>(static_cast<std::size_t>(buf_size), remaining));
+        const int n =
+            static_cast<int>(std::min<std::size_t>(static_cast<std::size_t>(buf_size), remaining));
         std::memcpy(buf, r->data + r->pos, static_cast<std::size_t>(n));
         r->pos += static_cast<std::size_t>(n);
         return n;
     };
-    const auto io_seek = +[](void *opaque, std::int64_t offset, int whence) -> std::int64_t {
+    const auto io_seek = +[](void *opaque, std::int64_t offset, int whence) -> std::int64_t
+    {
         Reader *r = static_cast<Reader *>(opaque);
         if (whence == AVSEEK_SIZE)
         {
             return static_cast<std::int64_t>(r->size);
         }
-        const std::int64_t base =
-            (whence == SEEK_SET) ? 0 : (whence == SEEK_CUR) ? static_cast<std::int64_t>(r->pos)
-                                                            : static_cast<std::int64_t>(r->size);
+        const std::int64_t base = (whence == SEEK_SET)   ? 0
+                                  : (whence == SEEK_CUR) ? static_cast<std::int64_t>(r->pos)
+                                                         : static_cast<std::int64_t>(r->size);
         const std::int64_t next = base + offset;
         if (next < 0 || next > static_cast<std::int64_t>(r->size))
         {
@@ -972,8 +973,9 @@ bool Player::set_external_subtitle(const std::string &bytes, const std::string &
                                 const int duration =
                                     parsed.end_display_time > 0 ? parsed.end_display_time : 2500;
                                 SubtitleCue cue;
-                                cue.start_ms = static_cast<int>(std::max<std::int64_t>(0, start_ms)) +
-                                               static_cast<int>(parsed.start_display_time);
+                                cue.start_ms =
+                                    static_cast<int>(std::max<std::int64_t>(0, start_ms)) +
+                                    static_cast<int>(parsed.start_display_time);
                                 cue.end_ms = cue.start_ms + std::max(500, duration);
                                 cue.text = std::move(line);
                                 decoded.push_back(std::move(cue));
@@ -1141,8 +1143,7 @@ void Player::decode()
     // player down after one bad item. The deadline bounds reconnect loops.
     format->interrupt_callback.callback = &Player::av_interrupt;
     format->interrupt_callback.opaque = this;
-    interrupt_deadline_us_.store(sys::monotonic_us() + kOpenDeadlineUs,
-                                 std::memory_order_relaxed);
+    interrupt_deadline_us_.store(sys::monotonic_us() + kOpenDeadlineUs, std::memory_order_relaxed);
     const int opened = avformat_open_input(&format, url.c_str(), nullptr, &options);
     av_dict_free(&options);
     if (opened < 0)
@@ -1712,8 +1713,7 @@ void Player::decode()
             // already filters early pictures via `drop_before`. This is the
             // Kodi/VLC model: audio is master, both sides drop pre-target
             // content, media anchored at target.
-            audio_skip_until_seconds_.store(static_cast<double>(resume),
-                                            std::memory_order_release);
+            audio_skip_until_seconds_.store(static_cast<double>(resume), std::memory_order_release);
             int rc = avformat_seek_file(format, -1, INT64_MIN, target, target, 0);
             if (rc < 0)
             {
@@ -1931,10 +1931,12 @@ void Player::decode()
                         bm.y = by;
                         bm.w = bw;
                         bm.h = bh;
-                        bm.canvas_w = subtitle->width > 0 ? subtitle->width
-                                                          : format->streams[video_index]->codecpar->width;
-                        bm.canvas_h = subtitle->height > 0 ? subtitle->height
-                                                           : format->streams[video_index]->codecpar->height;
+                        bm.canvas_w = subtitle->width > 0
+                                          ? subtitle->width
+                                          : format->streams[video_index]->codecpar->width;
+                        bm.canvas_h = subtitle->height > 0
+                                          ? subtitle->height
+                                          : format->streams[video_index]->codecpar->height;
                         bm.rgba.assign(static_cast<std::size_t>(bw) * bh * 4, 0);
                         int opaque = 0;    // pixels the palette left visible
                         int max_alpha = 0; // brightest alpha across them
@@ -1957,8 +1959,8 @@ void Player::decode()
                                                            nullptr};
                             int dst_linesize[4] = {r->w * 4, 0, 0, 0};
                             struct SwsContext *sws = sws_getContext(
-                                r->w, r->h, AV_PIX_FMT_PAL8, r->w, r->h, AV_PIX_FMT_RGBA,
-                                SWS_POINT, nullptr, nullptr, nullptr);
+                                r->w, r->h, AV_PIX_FMT_PAL8, r->w, r->h, AV_PIX_FMT_RGBA, SWS_POINT,
+                                nullptr, nullptr, nullptr);
                             if (sws == nullptr)
                             {
                                 continue;
@@ -1980,9 +1982,9 @@ void Player::decode()
                                 {
                                     const std::uint8_t *s =
                                         &rect_rgba[(srow + static_cast<std::size_t>(x - r->x)) * 4];
-                                    std::uint8_t *d =
-                                        &bm.rgba[(static_cast<std::size_t>(oy) * bw +
-                                                  static_cast<std::size_t>(x - bx)) * 4];
+                                    std::uint8_t *d = &bm.rgba[(static_cast<std::size_t>(oy) * bw +
+                                                                static_cast<std::size_t>(x - bx)) *
+                                                               4];
                                     d[0] = s[0];
                                     d[1] = s[1];
                                     d[2] = s[2];
@@ -2912,8 +2914,8 @@ void Player::decode()
                     audio_anchor_pts_us_.store(INT64_MIN, std::memory_order_relaxed);
                     // Pick up the pre-target drop threshold the demux
                     // published just before flushing our queue.
-                    skip_until_pts = audio_skip_until_seconds_.exchange(-1.0,
-                                                                        std::memory_order_acquire);
+                    skip_until_pts =
+                        audio_skip_until_seconds_.exchange(-1.0, std::memory_order_acquire);
                 };
                 for (;;)
                 {
@@ -3005,9 +3007,8 @@ void Player::decode()
                                     seconds_of(format->streams[audio_index]->time_base, frame->pts);
                                 if (A0 >= 0.0)
                                 {
-                                    audio_anchor_pts_us_.store(
-                                        static_cast<long long>(A0 * 1.0e6),
-                                        std::memory_order_relaxed);
+                                    audio_anchor_pts_us_.store(static_cast<long long>(A0 * 1.0e6),
+                                                               std::memory_order_relaxed);
                                 }
                                 anchor_pending = false;
                             }
@@ -3069,7 +3070,8 @@ void Player::decode()
                     pending_seek_deadline_us_.load(std::memory_order_relaxed);
                 if (deadline > 0 && sys::monotonic_us() >= deadline)
                 {
-                    const int settled = pending_seek_target_.exchange(-1, std::memory_order_relaxed);
+                    const int settled =
+                        pending_seek_target_.exchange(-1, std::memory_order_relaxed);
                     pending_seek_deadline_us_.store(0, std::memory_order_relaxed);
                     if (settled >= 0)
                     {
@@ -3213,9 +3215,8 @@ void Player::decode()
                         const double candidate = static_cast<double>(a0_us) / 1.0e6;
                         A0 = candidate;
                         anchored = true;
-                        clock_base =
-                            A0 - static_cast<double>(played_at_seek) /
-                                       static_cast<double>(audio::kSampleRate);
+                        clock_base = A0 - static_cast<double>(played_at_seek) /
+                                              static_cast<double>(audio::kSampleRate);
                         clock_anchored = true;
                     }
                     sys::log("[HUI] seek commit waited=%lldms target=%ds A0=%.3fs delta=%+lldms "
@@ -3825,19 +3826,25 @@ std::uint32_t Player::frame(gfx::Renderer &renderer, int *width, int *height)
                     for (int i = 0; i < 1024; ++i)
                     {
                         float dy = picked->lut[i] - upload_lut_[i];
-                        if (dy < 0.0f) dy = -dy;
-                        if (dy > d_y) d_y = dy;
+                        if (dy < 0.0f)
+                            dy = -dy;
+                        if (dy > d_y)
+                            d_y = dy;
                         float tc = picked->lut[1024 + i] - upload_lut_[1024 + i];
-                        if (tc < 0.0f) tc = -tc;
-                        if (tc > d_c) d_c = tc;
+                        if (tc < 0.0f)
+                            tc = -tc;
+                        if (tc > d_c)
+                            d_c = tc;
                         float pc = picked->lut[2048 + i] - upload_lut_[2048 + i];
-                        if (pc < 0.0f) pc = -pc;
-                        if (pc > d_c) d_c = pc;
+                        if (pc < 0.0f)
+                            pc = -pc;
+                        if (pc > d_c)
+                            d_c = pc;
                     }
                     sys::log("[HUI] dv swap ver=%u->%u lag=%lldms dY=%.4f dC=%.4f",
                              upload_lut_version_, want_version,
-                             static_cast<long long>((due.pts_us - picked->pts_us) / 1000),
-                             d_y, d_c);
+                             static_cast<long long>((due.pts_us - picked->pts_us) / 1000), d_y,
+                             d_c);
                 }
                 if (picked != nullptr)
                 {

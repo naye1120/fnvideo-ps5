@@ -136,8 +136,7 @@ std::string pinyin_of(std::string_view utf8, std::string *initials)
             }
             else if (std::isalpha(static_cast<unsigned char>(ch)))
             {
-                const char low =
-                    static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+                const char low = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
                 out.push_back(low);
                 if (initials != nullptr)
                 {

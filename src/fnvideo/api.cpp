@@ -120,40 +120,74 @@ static const char *genre_zh(int id)
 {
     switch (id)
     {
-        case 1: return "动作";
-        case 2: return "冒险";
-        case 3: return "动画";
-        case 4: return "喜剧";
-        case 5: return "犯罪";
-        case 6: return "纪录片";
-        case 7: return "剧情";
-        case 8: return "家庭";
-        case 9: return "科幻奇幻";
-        case 10: return "历史";
-        case 11: return "恐怖";
-        case 12: return "音乐";
-        case 13: return "悬疑";
-        case 14: return "爱情";
-        case 16: return "电视电影";
-        case 17: return "惊悚";
-        case 18: return "战争政治";
-        case 19: return "西部";
-        case 30: return "动作冒险";
-        case 31: return "儿童";
-        case 32: return "新闻";
-        case 33: return "真人秀";
-        case 35: return "肥皂剧";
-        case 36: return "脱口秀";
-        case 101: return "运动";
-        case 102: return "财经";
-        case 103: return "教育";
-        case 104: return "生活方式";
-        case 105: return "本地";
-        case 106: return "其他";
-        case 109: return "剧集";
-        case 110: return "综艺";
-        case 111: return "儿童";
-        default: return nullptr;
+    case 1:
+        return "动作";
+    case 2:
+        return "冒险";
+    case 3:
+        return "动画";
+    case 4:
+        return "喜剧";
+    case 5:
+        return "犯罪";
+    case 6:
+        return "纪录片";
+    case 7:
+        return "剧情";
+    case 8:
+        return "家庭";
+    case 9:
+        return "科幻奇幻";
+    case 10:
+        return "历史";
+    case 11:
+        return "恐怖";
+    case 12:
+        return "音乐";
+    case 13:
+        return "悬疑";
+    case 14:
+        return "爱情";
+    case 16:
+        return "电视电影";
+    case 17:
+        return "惊悚";
+    case 18:
+        return "战争政治";
+    case 19:
+        return "西部";
+    case 30:
+        return "动作冒险";
+    case 31:
+        return "儿童";
+    case 32:
+        return "新闻";
+    case 33:
+        return "真人秀";
+    case 35:
+        return "肥皂剧";
+    case 36:
+        return "脱口秀";
+    case 101:
+        return "运动";
+    case 102:
+        return "财经";
+    case 103:
+        return "教育";
+    case 104:
+        return "生活方式";
+    case 105:
+        return "本地";
+    case 106:
+        return "其他";
+    case 109:
+        return "剧集";
+    case 110:
+        return "综艺";
+    case 111:
+        return "儿童";
+    default:
+        return nullptr;
     }
 }
 
@@ -742,8 +776,7 @@ bool Api::streams(const std::string &item_guid, Item *item, std::string *error)
     return true;
 }
 
-bool Api::subtitle_content(const std::string &subtitle_guid, std::string *bytes,
-                           std::string *error)
+bool Api::subtitle_content(const std::string &subtitle_guid, std::string *bytes, std::string *error)
 {
     if (subtitle_guid.empty())
     {
@@ -756,8 +789,8 @@ bool Api::subtitle_content(const std::string &subtitle_guid, std::string *bytes,
     // Token only, no signature - the endpoint hands back the raw file bytes
     // (application/octet-stream, sometimes a UTF-8 BOM), not a JSON envelope.
     const std::string url = base_ + "/v/api/v1/subtitle/dl/" + subtitle_guid;
-    const HttpResult result =
-        fnos::http_request("GET", url, media_headers(), std::string(), kMaxImageBytes, kTimeoutSeconds);
+    const HttpResult result = fnos::http_request("GET", url, media_headers(), std::string(),
+                                                 kMaxImageBytes, kTimeoutSeconds);
     if (!result.error.empty())
     {
         if (error != nullptr)
@@ -816,7 +849,7 @@ bool Api::subtitle_search(const std::string &media_guid, const std::string &lan,
 }
 
 bool Api::subtitle_download(const std::string &media_guid, const std::string &trim_id,
-                           std::string *error)
+                            std::string *error)
 {
     std::string body("{");
     body += json_field("media_guid", media_guid);
@@ -863,8 +896,7 @@ bool subtitle_extension(const std::string &name)
 
 } // namespace
 
-bool Api::folder_files(const std::string &folder, std::vector<SubtitleHit> *out,
-                       std::string *error)
+bool Api::folder_files(const std::string &folder, std::vector<SubtitleHit> *out, std::string *error)
 {
     out->clear();
     if (folder.empty())

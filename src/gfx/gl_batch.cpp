@@ -891,9 +891,9 @@ void GlBatch::create_video_texture(int width, int height, bool ten_bit)
     // One unpack buffer per ring slot per plane, sized to the largest plane so
     // the per-frame orphan+refill never has to reallocate storage.
     const int pbo_bytes = ten_bit ? 2 : 1;
-    const std::size_t max_plane_bytes =
-        static_cast<std::size_t>(width) * static_cast<std::size_t>(height) *
-        static_cast<std::size_t>(pbo_bytes);
+    const std::size_t max_plane_bytes = static_cast<std::size_t>(width) *
+                                        static_cast<std::size_t>(height) *
+                                        static_cast<std::size_t>(pbo_bytes);
     const auto make_pbo = [&](GLuint *name)
     {
         glGenBuffers(1, name);
@@ -934,8 +934,8 @@ void GlBatch::update_video_texture(const std::uint8_t *y, int y_pitch, const std
     // keep its batched upload fast path solely for the default pixel-store
     // state, and forcing a strided copy of already-contiguous rows (pitch ==
     // width, the common 4K case) is exactly the ~100 ms we are measuring away.
-    const auto set_unpack = [](int row_components, int texel_width, int bytes_per_texel,
-                               int bytes_per_sample)
+    const auto set_unpack =
+        [](int row_components, int texel_width, int bytes_per_texel, int bytes_per_sample)
     {
         if (row_components == texel_width)
         {
@@ -999,13 +999,13 @@ void GlBatch::update_video_texture(const std::uint8_t *y, int y_pitch, const std
 
     const std::int64_t y_begin_us = sys::monotonic_us();
     glBindTexture(GL_TEXTURE_RECTANGLE, video_y_[video_slot_]);
-    if (!(video_pbo_ok_ &&
-          upload_plane(video_pbo_y_[video_slot_], y, y_pitch, video_width_, video_height_, GL_RED,
-                       bytes)))
+    if (!(video_pbo_ok_ && upload_plane(video_pbo_y_[video_slot_], y, y_pitch, video_width_,
+                                        video_height_, GL_RED, bytes)))
     {
         video_pbo_ok_ = false;
         set_unpack(y_pitch / bytes, video_width_, bytes, bytes);
-        glTexSubImage2D(GL_TEXTURE_RECTANGLE, 0, 0, 0, video_width_, video_height_, GL_RED, type, y);
+        glTexSubImage2D(GL_TEXTURE_RECTANGLE, 0, 0, 0, video_width_, video_height_, GL_RED, type,
+                        y);
     }
     const std::int64_t y_end_us = sys::monotonic_us();
 
@@ -1029,9 +1029,8 @@ void GlBatch::update_video_texture(const std::uint8_t *y, int y_pitch, const std
     if (planar_chroma && v != nullptr && v_pitch > 0)
     {
         glBindTexture(GL_TEXTURE_RECTANGLE, video_v_[video_slot_]);
-        if (!(video_pbo_ok_ &&
-              upload_plane(video_pbo_v_[video_slot_], v, v_pitch, chroma_w, chroma_h, GL_RED,
-                           bytes)))
+        if (!(video_pbo_ok_ && upload_plane(video_pbo_v_[video_slot_], v, v_pitch, chroma_w,
+                                            chroma_h, GL_RED, bytes)))
         {
             video_pbo_ok_ = false;
             set_unpack(v_pitch / bytes, chroma_w, bytes, bytes);

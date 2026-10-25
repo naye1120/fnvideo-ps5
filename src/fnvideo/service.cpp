@@ -753,15 +753,18 @@ void Service::mark_finished(const std::string &guid)
     {
         std::lock_guard<std::mutex> lock(mutex_);
         changed = finished_.insert(guid).second;
-        if (progress_.erase(guid) > 0) changed = true;
+        if (progress_.erase(guid) > 0)
+            changed = true;
         if (last_progress_guid_ == guid)
         {
             last_progress_guid_.clear();
             last_progress_position_ = -1;
         }
-        if (changed) ++view_.revision;
+        if (changed)
+            ++view_.revision;
     }
-    if (changed) save_progress();
+    if (changed)
+        save_progress();
 }
 
 bool Service::clear_finished(const std::string &guid)
@@ -774,9 +777,11 @@ bool Service::clear_finished(const std::string &guid)
     {
         std::lock_guard<std::mutex> lock(mutex_);
         removed = finished_.erase(guid) > 0;
-        if (removed) ++view_.revision;
+        if (removed)
+            ++view_.revision;
     }
-    if (removed) save_progress();
+    if (removed)
+        save_progress();
     return removed;
 }
 
@@ -1276,9 +1281,9 @@ void Service::update(gfx::Renderer &renderer)
             logged_live = now_live;
             ++logged_flips;
             sys::log("[HUI] pgs overlay live=%d hit=%d pos=%d tex=%u %dx%d+%d+%d canvas=%dx%d",
-                     now_live ? 1 : 0, hit ? 1 : 0, player_.position_millis(),
-                     subtitle_texture_, subtitle_w_, subtitle_h_, subtitle_x_, subtitle_y_,
-                     subtitle_canvas_w_, subtitle_canvas_h_);
+                     now_live ? 1 : 0, hit ? 1 : 0, player_.position_millis(), subtitle_texture_,
+                     subtitle_w_, subtitle_h_, subtitle_x_, subtitle_y_, subtitle_canvas_w_,
+                     subtitle_canvas_h_);
         }
     }
 
@@ -1338,8 +1343,10 @@ void Service::update(gfx::Renderer &renderer)
         bool changed = false;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            if (progress_.erase(guid) > 0) changed = true;
-            if (finished_.insert(guid).second) changed = true;
+            if (progress_.erase(guid) > 0)
+                changed = true;
+            if (finished_.insert(guid).second)
+                changed = true;
             if (last_progress_guid_ == guid)
             {
                 last_progress_guid_.clear();
@@ -1509,8 +1516,10 @@ void Service::stop_playback()
         bool changed = false;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            if (progress_.erase(guid) > 0) changed = true;
-            if (!guid.empty() && finished_.insert(guid).second) changed = true;
+            if (progress_.erase(guid) > 0)
+                changed = true;
+            if (!guid.empty() && finished_.insert(guid).second)
+                changed = true;
             if (last_progress_guid_ == guid)
             {
                 last_progress_guid_.clear();
@@ -2075,8 +2084,7 @@ void Service::run_subtitle_task(const SubtitleRequest &request)
         }
         if (!fetched)
         {
-            sys::log("[HUI] subtitle dl fail guid=%s err=%s", request.guid.c_str(),
-                     error.c_str());
+            sys::log("[HUI] subtitle dl fail guid=%s err=%s", request.guid.c_str(), error.c_str());
             // Drop the stale selection so the menu highlights nothing rather
             // than a file that is not on screen.
             std::lock_guard<std::mutex> lock(mutex_);
@@ -2178,9 +2186,8 @@ void Service::run_subtitle_task(const SubtitleRequest &request)
             }
             subtitle_panel_.error.clear();
             subtitle_panel_.status =
-                subs > 0
-                    ? "找到 " + std::to_string(subs) + " 个字幕 · 可进入子文件夹"
-                    : "本层没有字幕文件 · 可进入子文件夹或返回上级";
+                subs > 0 ? "找到 " + std::to_string(subs) + " 个字幕 · 可进入子文件夹"
+                         : "本层没有字幕文件 · 可进入子文件夹或返回上级";
         }
         else
         {
@@ -2302,8 +2309,7 @@ void Service::sync_play(const std::string &guid, int resume_seconds, int audio_t
     player_.stop();
     sys::log("[HUI] sync_play stop-done req=%u took=%lldms", request,
              static_cast<long long>((sys::monotonic_us() - stop_t0) / 1000));
-    sys::log("[HUI] play begin req=%u resume=%d guid=%s", request, resume_seconds,
-             guid.c_str());
+    sys::log("[HUI] play begin req=%u resume=%d guid=%s", request, resume_seconds, guid.c_str());
 
     std::string url;
     PlayInfo info;
@@ -2392,9 +2398,8 @@ void Service::sync_play(const std::string &guid, int resume_seconds, int audio_t
             {
                 // The player reads the bytes itself; only the token header
                 // rides along, which is all the range endpoint checks.
-                const bool started =
-                    player_.start(url, api_.media_headers(), start, audio_track, subtitle_track,
-                                  subtitle_auto);
+                const bool started = player_.start(url, api_.media_headers(), start, audio_track,
+                                                   subtitle_track, subtitle_auto);
                 sys::log("[HUI] play start rc=%d", started ? 1 : 0);
                 bool current = false;
                 {
@@ -2412,8 +2417,8 @@ void Service::sync_play(const std::string &guid, int resume_seconds, int audio_t
                         if (play_pref_subtitle_ >= 0 &&
                             play_pref_subtitle_ < static_cast<int>(play_external_subs_.size()))
                         {
-                            const SubtitleStreamInfo ext = play_external_subs_[static_cast<std::size_t>(
-                                play_pref_subtitle_)];
+                            const SubtitleStreamInfo ext =
+                                play_external_subs_[static_cast<std::size_t>(play_pref_subtitle_)];
                             if (!ext.guid.empty() && !ext.bitmap && ext.external)
                             {
                                 play_subtitle_ext_ = kExternalSubtitleBase + play_pref_subtitle_;
@@ -2692,10 +2697,15 @@ void Service::worker_main()
         // "stuck on 正在打开 with no play begin" case. Log the job as it starts
         // and, only when it runs long, as it ends, so a hang names the stage
         // that wedged the worker instead of guessing.
-        const char *job_kind =
-            run_sync ? "sync" : run_play ? "play" : run_sub ? "subtitle" : run_enrich ? "enrich" : "detail";
-        const char *job_guid =
-            run_sync ? "" : run_play ? play_guid.c_str() : run_sub ? sub_request.guid.c_str() : job.c_str();
+        const char *job_kind = run_sync     ? "sync"
+                               : run_play   ? "play"
+                               : run_sub    ? "subtitle"
+                               : run_enrich ? "enrich"
+                                            : "detail";
+        const char *job_guid = run_sync   ? ""
+                               : run_play ? play_guid.c_str()
+                               : run_sub  ? sub_request.guid.c_str()
+                                          : job.c_str();
         sys::log("[HUI] worker job=%s guid=%s", job_kind, job_guid);
         const std::int64_t job_t0 = sys::monotonic_us();
         if (run_sync)
@@ -3273,7 +3283,8 @@ void Service::enrich_one(const std::string &guid)
         bool changed = false;
         // Only fill a field the list left empty; a value already on the row (or
         // set by the user) is never overwritten by the background pass.
-        const auto merge = [&changed](std::string &dst, const std::string &src) {
+        const auto merge = [&changed](std::string &dst, const std::string &src)
+        {
             if (dst.empty() && !src.empty())
             {
                 dst = src;

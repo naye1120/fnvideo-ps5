@@ -345,8 +345,8 @@ class Service
     // screen projects that canvas into the video's displayed area, so the
     // sub-picture lines up instead of stretching to the screen. False when no
     // bitmap cue covers the playhead.
-    bool subtitle_overlay(std::uint32_t *texture, int *x, int *y, int *w, int *h,
-                          int *canvas_w, int *canvas_h) const
+    bool subtitle_overlay(std::uint32_t *texture, int *x, int *y, int *w, int *h, int *canvas_w,
+                          int *canvas_h) const
     {
         if (!subtitle_live_ || subtitle_texture_ == 0)
         {

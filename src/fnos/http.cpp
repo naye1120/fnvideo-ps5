@@ -182,8 +182,7 @@ std::mutex &transfer_gate()
 // playback - so the fix targets the stalling transfer, not guesswork.
 struct GateHold
 {
-    explicit GateHold(const char *label)
-        : lock(transfer_gate(), std::defer_lock), what(label)
+    explicit GateHold(const char *label) : lock(transfer_gate(), std::defer_lock), what(label)
     {
         const std::int64_t begin = sys::monotonic_us();
         lock.lock();

@@ -60,7 +60,7 @@ struct AudioStreamInfo
 {
     std::string language;
     std::string title;
-    std::string codec; // codec_name, e.g. eac3 / truehd / aac
+    std::string codec;          // codec_name, e.g. eac3 / truehd / aac
     std::string channel_layout; // "7.1", "5.1(side)", "stereo"
     int channels = 0;           // raw channel count
     int index = 0;
@@ -273,8 +273,7 @@ class Api
     // (the same endpoint the web's "add NAS subtitle" tree walks); the result
     // keeps every subdirectory (is_dir, so the picker can drill in) plus the
     // subtitle files by extension. Runs on the worker like other blocking calls.
-    bool folder_files(const std::string &folder, std::vector<SubtitleHit> *out,
-                      std::string *error);
+    bool folder_files(const std::string &folder, std::vector<SubtitleHit> *out, std::string *error);
     // Resume list, ordered by the server.
     bool continue_watching(ItemPage *out, std::string *error);
 

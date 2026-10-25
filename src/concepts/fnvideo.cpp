@@ -90,7 +90,8 @@ const Color kClear = Color::rgb(0x000000, 0.0f);
 // depth colours are read from here; the shapes are passed per call.
 const ui::Theme &ui_theme()
 {
-    static const ui::Theme theme = [] {
+    static const ui::Theme theme = []
+    {
         ui::Theme t{};
         t.id = "fnvideo";
         t.name = "fnvideo";
@@ -198,7 +199,7 @@ struct Item
     std::string backdrop;
     std::string year; // "2026", empty when the server sent no date
     Kind kind = Kind::movie;
-    std::string type; // the server's raw type: Movie / TV / Video / Directory
+    std::string type;     // the server's raw type: Movie / TV / Video / Directory
     std::string category; // the server's ancestor_category: Movie / TV / Others / Mix
     int is_favorite = 0;  // the server's is_favorite flag, for the 收藏 shelf
     int watched = 0;      // the server's watched flag (0/1), for the 已观看 filter
@@ -323,27 +324,75 @@ std::string country_text(std::string_view codes)
         const char *zh;
     };
     static const Name kNames[] = {
-        {"CN", "中国"},     {"HK", "中国香港"},   {"TW", "中国台湾"},   {"MO", "中国澳门"},
-        {"US", "美国"},     {"GB", "英国"},       {"JP", "日本"},       {"KR", "韩国"},
-        {"FR", "法国"},     {"DE", "德国"},       {"CA", "加拿大"},     {"AU", "澳大利亚"},
-        {"IN", "印度"},     {"IT", "意大利"},     {"ES", "西班牙"},     {"RU", "俄罗斯"},
-        {"TH", "泰国"},     {"SE", "瑞典"},       {"NO", "挪威"},       {"DK", "丹麦"},
-        {"NL", "荷兰"},     {"BE", "比利时"},     {"IE", "爱尔兰"},     {"CH", "瑞士"},
-        {"AT", "奥地利"},   {"PL", "波兰"},       {"CZ", "捷克"},       {"BR", "巴西"},
-        {"MX", "墨西哥"},   {"NZ", "新西兰"},     {"SG", "新加坡"},     {"ID", "印度尼西亚"},
-        {"PH", "菲律宾"},   {"VN", "越南"},       {"MY", "马来西亚"},   {"PT", "葡萄牙"},
+        {"CN", "中国"},
+        {"HK", "中国香港"},
+        {"TW", "中国台湾"},
+        {"MO", "中国澳门"},
+        {"US", "美国"},
+        {"GB", "英国"},
+        {"JP", "日本"},
+        {"KR", "韩国"},
+        {"FR", "法国"},
+        {"DE", "德国"},
+        {"CA", "加拿大"},
+        {"AU", "澳大利亚"},
+        {"IN", "印度"},
+        {"IT", "意大利"},
+        {"ES", "西班牙"},
+        {"RU", "俄罗斯"},
+        {"TH", "泰国"},
+        {"SE", "瑞典"},
+        {"NO", "挪威"},
+        {"DK", "丹麦"},
+        {"NL", "荷兰"},
+        {"BE", "比利时"},
+        {"IE", "爱尔兰"},
+        {"CH", "瑞士"},
+        {"AT", "奥地利"},
+        {"PL", "波兰"},
+        {"CZ", "捷克"},
+        {"BR", "巴西"},
+        {"MX", "墨西哥"},
+        {"NZ", "新西兰"},
+        {"SG", "新加坡"},
+        {"ID", "印度尼西亚"},
+        {"PH", "菲律宾"},
+        {"VN", "越南"},
+        {"MY", "马来西亚"},
+        {"PT", "葡萄牙"},
         // Codes the library actually uses but the first table missed - a real
         // /item/{guid} sweep showed TR / SK / ZA / SA / LU leaking through as raw
         // two-letter codes while every other country read in Chinese, which is
         // the inconsistency on the detail chips. Extended with the neighbouring
         // common ISO 3166-1 alpha-2 codes so rarely-seen origins stay coherent.
-        {"TR", "土耳其"},   {"SK", "斯洛伐克"},   {"ZA", "南非"},       {"SA", "沙特阿拉伯"},
-        {"LU", "卢森堡"},   {"IL", "以色列"},     {"AE", "阿联酋"},     {"GR", "希腊"},
-        {"FI", "芬兰"},     {"IS", "冰岛"},       {"HU", "匈牙利"},     {"RO", "罗马尼亚"},
-        {"BG", "保加利亚"}, {"HR", "克罗地亚"},   {"RS", "塞尔维亚"},   {"UA", "乌克兰"},
-        {"AR", "阿根廷"},   {"CL", "智利"},       {"CO", "哥伦比亚"},   {"PE", "秘鲁"},
-        {"EG", "埃及"},     {"NG", "尼日利亚"},   {"KE", "肯尼亚"},     {"MA", "摩洛哥"},
-        {"IR", "伊朗"},     {"IQ", "伊拉克"},     {"PK", "巴基斯坦"},   {"KZ", "哈萨克斯坦"},
+        {"TR", "土耳其"},
+        {"SK", "斯洛伐克"},
+        {"ZA", "南非"},
+        {"SA", "沙特阿拉伯"},
+        {"LU", "卢森堡"},
+        {"IL", "以色列"},
+        {"AE", "阿联酋"},
+        {"GR", "希腊"},
+        {"FI", "芬兰"},
+        {"IS", "冰岛"},
+        {"HU", "匈牙利"},
+        {"RO", "罗马尼亚"},
+        {"BG", "保加利亚"},
+        {"HR", "克罗地亚"},
+        {"RS", "塞尔维亚"},
+        {"UA", "乌克兰"},
+        {"AR", "阿根廷"},
+        {"CL", "智利"},
+        {"CO", "哥伦比亚"},
+        {"PE", "秘鲁"},
+        {"EG", "埃及"},
+        {"NG", "尼日利亚"},
+        {"KE", "肯尼亚"},
+        {"MA", "摩洛哥"},
+        {"IR", "伊朗"},
+        {"IQ", "伊拉克"},
+        {"PK", "巴基斯坦"},
+        {"KZ", "哈萨克斯坦"},
     };
     std::string out;
     std::size_t begin = 0;
@@ -1160,8 +1209,7 @@ class Fnvideo final : public app::Concept
         {
             if (std::isalnum(static_cast<unsigned char>(ch)))
             {
-                needle.push_back(
-                    static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+                needle.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
             }
         }
         if (needle.empty())
@@ -1546,9 +1594,10 @@ class Fnvideo final : public app::Concept
                 return;
             }
             const std::string &plot = detail_item().synopsis;
-            const std::size_t plot_lines = plot.empty()
-                ? 0u
-                : glyphs_.regular.font->wrap(plot, 21.0f, kSynopsisCollapsedWidth).size();
+            const std::size_t plot_lines =
+                plot.empty()
+                    ? 0u
+                    : glyphs_.regular.font->wrap(plot, 21.0f, kSynopsisCollapsedWidth).size();
             if (plot_lines > static_cast<std::size_t>(kSynopsisCollapsedLines))
             {
                 detail_synopsis_open_ = true;
@@ -1569,8 +1618,7 @@ class Fnvideo final : public app::Concept
             // A series page has no track pickers, so its two focus slots are
             // skipped: walking right past 收藏 lands straight on the season /
             // episode strip instead of an empty capsule.
-            if (!detail_pickers_enabled() &&
-                (detail_focus_ == 2 || detail_focus_ == 3))
+            if (!detail_pickers_enabled() && (detail_focus_ == 2 || detail_focus_ == 3))
                 detail_focus_ = kDetailActions;
             // The chip row and the episode row share one index line. Entering
             // the episodes commits the season the user walked onto, otherwise
@@ -1594,8 +1642,7 @@ class Fnvideo final : public app::Concept
             --detail_focus_;
             // Mirror of the right-nav skip: leaving the strip leftward steps
             // back over the hidden pickers and stops on 收藏.
-            if (!detail_pickers_enabled() &&
-                (detail_focus_ == 2 || detail_focus_ == 3))
+            if (!detail_pickers_enabled() && (detail_focus_ == 2 || detail_focus_ == 3))
                 detail_focus_ = 1;
             feedback.play(audio::Cue::focus);
         }
@@ -2121,8 +2168,8 @@ class Fnvideo final : public app::Concept
             {
                 open_log_bucket_ = bucket;
                 if (bucket > 0)
-                    sys::log("[HUI] still opening guid=%s wait=%.0fs",
-                             playable_guid().c_str(), open_wait_);
+                    sys::log("[HUI] still opening guid=%s wait=%.0fs", playable_guid().c_str(),
+                             open_wait_);
             }
         }
         else
@@ -2735,8 +2782,9 @@ class Fnvideo final : public app::Concept
 
     static const char *filter_dim_label(int row)
     {
-        static const char *const k[] = {"影视分类", "类型", "分辨率", "动态范围", "音频规格",
-                                        "国家/地区", "发行年份", "是否已观看", "排序"};
+        static const char *const k[] = {"影视分类", "类型",       "分辨率",
+                                        "动态范围", "音频规格",   "国家/地区",
+                                        "发行年份", "是否已观看", "排序"};
         return k[row];
     }
     // One row's option labels. 排序 (row kFilterDims) has its own set; the eight
@@ -2744,28 +2792,46 @@ class Fnvideo final : public app::Concept
     static const char *const *filter_opts(int row, int &n)
     {
         static const char *const cat[] = {"全部", "电影", "电视剧", "其他"};
-        static const char *const genre[] = {"全部", "剧情", "喜剧", "动作", "冒险", "动画", "悬疑",
-                                            "科幻奇幻", "恐怖", "爱情"};
+        static const char *const genre[] = {"全部", "剧情", "喜剧",     "动作", "冒险",
+                                            "动画", "悬疑", "科幻奇幻", "恐怖", "爱情"};
         static const char *const res[] = {"全部", "4K", "1080P", "720P", "其他"};
         static const char *const color[] = {"全部", "杜比视界", "HDR10", "SDR", "其他"};
         static const char *const audio[] = {"全部", "杜比全景声", "DTS", "立体声", "其他"};
-        static const char *const region[] = {"全部", "中国", "美国", "英国", "日本", "韩国", "法国",
-                                             "印度"};
-        static const char *const year[] = {"全部", "今年", "近三年", "2020年代", "2010年代", "2000年代",
-                                           "更早"};
+        static const char *const region[] = {"全部", "中国", "美国", "英国",
+                                             "日本", "韩国", "法国", "印度"};
+        static const char *const year[] = {"全部",     "今年",     "近三年", "2020年代",
+                                           "2010年代", "2000年代", "更早"};
         static const char *const watch[] = {"全部", "已观看", "未观看"};
         static const char *const sort[] = {"添加日期", "评分", "标题", "年份"};
         switch (row)
         {
-        case 0: n = 4; return cat;
-        case 1: n = 10; return genre;
-        case 2: n = 5; return res;
-        case 3: n = 5; return color;
-        case 4: n = 5; return audio;
-        case 5: n = 8; return region;
-        case 6: n = 7; return year;
-        case 7: n = 3; return watch;
-        default: n = 4; return sort;
+        case 0:
+            n = 4;
+            return cat;
+        case 1:
+            n = 10;
+            return genre;
+        case 2:
+            n = 5;
+            return res;
+        case 3:
+            n = 5;
+            return color;
+        case 4:
+            n = 5;
+            return audio;
+        case 5:
+            n = 8;
+            return region;
+        case 6:
+            n = 7;
+            return year;
+        case 7:
+            n = 3;
+            return watch;
+        default:
+            n = 4;
+            return sort;
         }
     }
     int row_selection(int row) const
@@ -2843,8 +2909,10 @@ class Fnvideo final : public app::Concept
             const bool k4 = contains_ci(rl, "4k") || contains_ci(rl, "2160");
             const bool k1080 = contains_ci(rl, "1080");
             const bool k720 = contains_ci(rl, "720");
-            const bool ok = f_[2] == 1 ? k4 : f_[2] == 2 ? k1080 : f_[2] == 3 ? k720
-                                                                              : !(k4 || k1080 || k720);
+            const bool ok = f_[2] == 1   ? k4
+                            : f_[2] == 2 ? k1080
+                            : f_[2] == 3 ? k720
+                                         : !(k4 || k1080 || k720);
             if (!ok)
                 return false;
         }
@@ -2854,8 +2922,10 @@ class Fnvideo final : public app::Concept
             const bool dv = contains_ci(cl, "dolby") || contains_ci(cl, "vision");
             const bool hdr = contains_ci(cl, "hdr");
             const bool sdr = contains_ci(cl, "sdr");
-            const bool ok = f_[3] == 1 ? dv : f_[3] == 2 ? hdr : f_[3] == 3 ? (sdr || cl.empty())
-                                                                            : !(dv || hdr);
+            const bool ok = f_[3] == 1   ? dv
+                            : f_[3] == 2 ? hdr
+                            : f_[3] == 3 ? (sdr || cl.empty())
+                                         : !(dv || hdr);
             if (!ok)
                 return false;
         }
@@ -2865,8 +2935,10 @@ class Fnvideo final : public app::Concept
             const bool atmos = contains_ci(al, "atmos");
             const bool dts = contains_ci(al, "dts");
             const bool stereo = contains_ci(al, "stereo") || contains_ci(al, "aac");
-            const bool ok = f_[4] == 1 ? atmos : f_[4] == 2 ? dts : f_[4] == 3 ? stereo
-                                                                              : !(atmos || dts);
+            const bool ok = f_[4] == 1   ? atmos
+                            : f_[4] == 2 ? dts
+                            : f_[4] == 3 ? stereo
+                                         : !(atmos || dts);
             if (!ok)
                 return false;
         }
@@ -2877,13 +2949,27 @@ class Fnvideo final : public app::Concept
             bool ok = false;
             switch (f_[6])
             {
-            case 1: ok = y == now; break;
-            case 2: ok = y > now - 3 && y <= now; break;
-            case 3: ok = y >= 2020 && y < 2030; break;
-            case 4: ok = y >= 2010 && y < 2020; break;
-            case 5: ok = y >= 2000 && y < 2010; break;
-            case 6: ok = y > 0 && y < 2000; break;
-            default: ok = true; break;
+            case 1:
+                ok = y == now;
+                break;
+            case 2:
+                ok = y > now - 3 && y <= now;
+                break;
+            case 3:
+                ok = y >= 2020 && y < 2030;
+                break;
+            case 4:
+                ok = y >= 2010 && y < 2020;
+                break;
+            case 5:
+                ok = y >= 2000 && y < 2010;
+                break;
+            case 6:
+                ok = y > 0 && y < 2000;
+                break;
+            default:
+                ok = true;
+                break;
             }
             if (!ok)
                 return false;
@@ -2921,10 +3007,14 @@ class Fnvideo final : public app::Concept
             const Item &y = items_[static_cast<std::size_t>(b)];
             switch (sort_field_)
             {
-            case 1: return x.rating > y.rating;
-            case 2: return x.title < y.title;
-            case 3: return std::atoi(x.year.c_str()) > std::atoi(y.year.c_str());
-            default: return false; // 0 添加日期: keep the server / wall order
+            case 1:
+                return x.rating > y.rating;
+            case 2:
+                return x.title < y.title;
+            case 3:
+                return std::atoi(x.year.c_str()) > std::atoi(y.year.c_str());
+            default:
+                return false; // 0 添加日期: keep the server / wall order
             }
         };
         if (sort_field_ != 0)
@@ -3013,8 +3103,8 @@ class Fnvideo final : public app::Concept
         list.rounded_rect({px, py, pw, ph}, 26.0f, kCoalLow.with_alpha(0.99f));
         list.bordered_rect({px, py, pw, ph}, 26.0f, kClear, 1.5f, kWhite.with_alpha(0.14f));
         ui::text(list, glyphs_.semibold, "筛选", px + 34.0f, py + 46.0f, 30.0f, kAccent);
-        ui::text(list, glyphs_.regular, "方向键选择 · ✕ 应用 · ○ / Options 返回",
-                 px + pw - 34.0f, py + 46.0f, 18.0f, kMuted.with_alpha(0.7f), Align::right);
+        ui::text(list, glyphs_.regular, "方向键选择 · ✕ 应用 · ○ / Options 返回", px + pw - 34.0f,
+                 py + 46.0f, 18.0f, kMuted.with_alpha(0.7f), Align::right);
 
         const float row_top = py + 96.0f;
         const float row_pitch = 78.0f;
@@ -3038,9 +3128,9 @@ class Fnvideo final : public app::Concept
                 }
                 const bool selected = row_selection(row) == i;
                 const bool cursor = focused_row && panel_col_ == i;
-                const Color fill = cursor ? kAccent
-                                          : (selected ? kWhite.with_alpha(0.18f)
-                                                      : kWhite.with_alpha(0.05f));
+                const Color fill =
+                    cursor ? kAccent
+                           : (selected ? kWhite.with_alpha(0.18f) : kWhite.with_alpha(0.05f));
                 list.rounded_rect({ox, ry, cw, 40.0f}, 18.0f, fill);
                 ui::text(list, glyphs_.regular, opts[i], ox + cw * 0.5f, ry + 26.0f, 16.0f,
                          cursor ? kOnAccent : (selected ? kInk : kMuted.with_alpha(0.75f)),
@@ -3321,7 +3411,7 @@ class Fnvideo final : public app::Concept
             const bool hot = refresh_focus_;
             constexpr float icon = 34.0f;
             const float ix = dot_x - 16.0f - icon; // 16px gap from the lamp edge
-            const float iy = 78.0f - icon * 0.5f;   // centred on the lamp line
+            const float iy = 78.0f - icon * 0.5f;  // centred on the lamp line
             const Color glyph = hot ? kOnAccent : kFaint;
             if (hot)
                 list.rounded_rect({ix, iy, icon, icon}, 10.0f, kAccent);
@@ -3427,12 +3517,12 @@ class Fnvideo final : public app::Concept
         const bool detail_sel = hero_hot && col_ == 1;
         const Rect pb{box.x + 48.0f, box.y + 286.0f, 168.0f, 52.0f};
         const Rect db{box.x + 232.0f, box.y + 286.0f, 168.0f, 52.0f};
-        const auto hero_button = [&](const Rect &r, bool hot, bool play_icon) {
+        const auto hero_button = [&](const Rect &r, bool hot, bool play_icon)
+        {
             const Color ink = hot ? kOnAccent : kInk;
             if (hot)
             {
-                list.shadow({r.x, r.y + 4.0f, r.w, r.h}, 26.0f, 14.0f,
-                            Color::rgb(0x000000, 0.5f));
+                list.shadow({r.x, r.y + 4.0f, r.w, r.h}, 26.0f, 14.0f, Color::rgb(0x000000, 0.5f));
                 list.gradient_rect(r, 26.0f, kAccentHi, kAccentLo);
                 list.gradient_rect({r.x + 3.0f, r.y + 3.0f, r.w - 6.0f, r.h * 0.46f}, 23.0f,
                                    kWhite.with_alpha(0.22f), kWhite.with_alpha(0.0f));
@@ -3498,8 +3588,7 @@ class Fnvideo final : public app::Concept
             const float span = kContentW - thumb_w;
             const float thumb_x =
                 kContentX + span * static_cast<float>(first) / static_cast<float>(cont_n - vis);
-            list.rounded_rect({kContentX, bar_y, kContentW, 4.0f}, 2.0f,
-                              kWhite.with_alpha(0.08f));
+            list.rounded_rect({kContentX, bar_y, kContentW, 4.0f}, 2.0f, kWhite.with_alpha(0.08f));
             list.rounded_rect({thumb_x, bar_y, thumb_w, 4.0f}, 2.0f, kWhite.with_alpha(0.24f));
         }
 
@@ -3507,8 +3596,8 @@ class Fnvideo final : public app::Concept
         ui::text(list, glyphs_.semibold, "最近收藏", kContentX, kRowLabel2, 22.0f, kInk);
         if (home_recent_.empty())
         {
-            ui::text(list, glyphs_.regular, "在详情页按收藏，这里会出现你的片单", kContentX + 108.0f,
-                     kRowLabel2, 17.0f, kFaint);
+            ui::text(list, glyphs_.regular, "在详情页按收藏，这里会出现你的片单",
+                     kContentX + 108.0f, kRowLabel2, 17.0f, kFaint);
         }
         else
         {
@@ -3614,8 +3703,8 @@ class Fnvideo final : public app::Concept
             const float w = std::max(96.0f, glyphs_.regular.measure(label, 18.0f) + 44.0f);
             const bool on = chip_active[i] || hot;
             list.rounded_rect({x, 156.0f, w, 40.0f}, 20.0f,
-                              hot ? kAccent : (on ? kWhite.with_alpha(0.14f)
-                                                  : kWhite.with_alpha(0.04f)));
+                              hot ? kAccent
+                                  : (on ? kWhite.with_alpha(0.14f) : kWhite.with_alpha(0.04f)));
             ui::text(list, glyphs_.regular, label, x + w * 0.5f, 182.0f, 18.0f,
                      hot ? kOnAccent : (on ? kInk : kMuted.with_alpha(0.7f)), Align::center);
             x += w + 12.0f;
@@ -3687,7 +3776,8 @@ class Fnvideo final : public app::Concept
     {
         std::vector<std::string> parts;
         std::string cur;
-        auto flush = [&]() {
+        auto flush = [&]()
+        {
             const std::size_t a = cur.find_first_not_of(' ');
             const std::size_t b = cur.find_last_not_of(' ');
             if (a != std::string::npos)
@@ -3842,8 +3932,8 @@ class Fnvideo final : public app::Concept
         return nullptr;
     }
 
-    static std::string detail_stream_name(const std::string &language,
-                                          const std::string &title, int number)
+    static std::string detail_stream_name(const std::string &language, const std::string &title,
+                                          int number)
     {
         // The server's own track title ("Mandarin"/"Cantonese"/"CHS"/"CHS&ENG")
         // is the most specific label and what the web page leads with, so it wins
@@ -3881,9 +3971,8 @@ class Fnvideo final : public app::Concept
     // both rooms. Earlier the player showed the raw tag ("chi") while the
     // detail page showed the Chinese name - the drift the viewer noticed.
     // `bitmap` is a PGS/graphics track; `external` a sidecar file beside it.
-    static std::string subtitle_display_name(const std::string &language,
-                                             const std::string &title, bool bitmap, bool external,
-                                             int number)
+    static std::string subtitle_display_name(const std::string &language, const std::string &title,
+                                             bool bitmap, bool external, int number)
     {
         std::string label = detail_stream_name(language, title, number);
         if (bitmap)
@@ -3992,7 +4081,10 @@ class Fnvideo final : public app::Concept
     // The two track pickers only apply to a single playable file. A series
     // collection has no streams of its own (/stream/list is per-episode), so on
     // those pages the pickers are hidden and their focus slots skipped.
-    bool detail_pickers_enabled() const { return detail_item().episodes <= 0; }
+    bool detail_pickers_enabled() const
+    {
+        return detail_item().episodes <= 0;
+    }
 
     void open_detail_track_menu(int which, app::Feedback &feedback)
     {
@@ -4071,10 +4163,10 @@ class Fnvideo final : public app::Concept
             return;
         const int n = detail_track_menu_ == 1 ? static_cast<int>(det.item.audio_streams.size())
                                               : static_cast<int>(det.item.subtitle_streams.size());
-        const int current_pref = detail_track_menu_ == 1
-                                     ? fnvideo::Service::instance().detail_pref_audio(detail_guid_)
-                                     : fnvideo::Service::instance().detail_pref_subtitle(
-                                           detail_guid_);
+        const int current_pref =
+            detail_track_menu_ == 1
+                ? fnvideo::Service::instance().detail_pref_audio(detail_guid_)
+                : fnvideo::Service::instance().detail_pref_subtitle(detail_guid_);
 
         const int selected = std::clamp(detail_track_sel_, 0, rows - 1);
         constexpr int kMaxRows = 8;
@@ -4193,8 +4285,8 @@ class Fnvideo final : public app::Concept
             {
                 constexpr float kLogoMaxW = 460.0f;
                 constexpr float kLogoMaxH = 190.0f;
-                const float scale =
-                    std::min(kLogoMaxW / static_cast<float>(lw), kLogoMaxH / static_cast<float>(lh));
+                const float scale = std::min(kLogoMaxW / static_cast<float>(lw),
+                                             kLogoMaxH / static_cast<float>(lh));
                 const float w = static_cast<float>(lw) * scale;
                 const float h = static_cast<float>(lh) * scale;
                 list.image(ltex, Rect{96.0f, 150.0f, w, h}, Rect{0.0f, 0.0f, 1.0f, 1.0f}, kWhite,
@@ -4321,8 +4413,8 @@ class Fnvideo final : public app::Concept
         // 继续播放 only while there is a real place to resume to. A film the
         // viewer just watched out is keyed as finished on this console, so it
         // reads 播放 and a press starts from the top (start_detail_playback).
-        const bool resumable = item.progress > 0.0f &&
-                               !fnvideo::Service::instance().is_finished(playable_guid());
+        const bool resumable =
+            item.progress > 0.0f && !fnvideo::Service::instance().is_finished(playable_guid());
         ui::text(list, glyphs_.semibold, resumable ? "继续播放" : "播放", play.x + 52.0f,
                  play.y + 31.0f, 20.0f, kOnAccent);
 
@@ -4336,7 +4428,8 @@ class Fnvideo final : public app::Concept
         // press opens the chooser (draw_detail_track_menu); play() seeds the
         // decoder from the stored choice, so the pick takes effect the moment
         // 播放 starts.
-        const auto draw_picker = [&](const Rect &box, const std::string &label, bool hot) {
+        const auto draw_picker = [&](const Rect &box, const std::string &label, bool hot)
+        {
             paint.surface(box, 24.0f, hot ? kAccent.with_alpha(0.18f) : kWhite.with_alpha(0.05f),
                           hot ? kAccent.with_alpha(0.85f) : kWhite.with_alpha(0.16f), 1.0f, 1.2f);
             fit_text(list, glyphs_.semibold, label, box.cx(), box.cy() + 7.0f, 18.0f,
@@ -4344,8 +4437,8 @@ class Fnvideo final : public app::Concept
         };
         if (detail_pickers_enabled())
         {
-            draw_picker({338.0f, 566.0f, 150.0f, 48.0f},
-                        detail_audio_label(det.item.audio_streams), detail_focus_ == 2);
+            draw_picker({338.0f, 566.0f, 150.0f, 48.0f}, detail_audio_label(det.item.audio_streams),
+                        detail_focus_ == 2);
             draw_picker({500.0f, 566.0f, 150.0f, 48.0f},
                         detail_subtitle_label(det.item.subtitle_streams), detail_focus_ == 3);
         }
@@ -4525,7 +4618,8 @@ class Fnvideo final : public app::Concept
             return;
         }
         auto &service = fnvideo::Service::instance();
-        if (player_menu_ == PlayerMenu::subtitle_search || player_menu_ == PlayerMenu::subtitle_browse)
+        if (player_menu_ == PlayerMenu::subtitle_search ||
+            player_menu_ == PlayerMenu::subtitle_browse)
         {
             draw_subtitle_search(list, service);
             return;
@@ -4706,8 +4800,7 @@ class Fnvideo final : public app::Concept
                 tail = "/";
             head += tail;
         }
-        ui::text(list, glyphs_.semibold, head,
-                 x + 24.0f, y + 38.0f, 21.0f, kInk);
+        ui::text(list, glyphs_.semibold, head, x + 24.0f, y + 38.0f, 21.0f, kInk);
         if (rows > visible && !panel.busy)
         {
             const std::string counter = std::to_string(selected + 1) + " / " + std::to_string(rows);
@@ -4722,17 +4815,17 @@ class Fnvideo final : public app::Concept
         }
         else if (panel.busy)
         {
-            const std::string status =
-                panel.status.empty() ? (local ? "正在浏览 NAS 文件夹…" : "正在搜索字幕…")
-                                     : panel.status;
+            const std::string status = panel.status.empty()
+                                           ? (local ? "正在浏览 NAS 文件夹…" : "正在搜索字幕…")
+                                           : panel.status;
             fit_text(list, glyphs_.regular, status, x + 24.0f, y + 78.0f, 17.0f, kMuted,
                      width - 48.0f);
         }
         else if (rows == 0)
         {
-            const std::string status =
-                panel.status.empty() ? (local ? "文件夹里没有字幕文件" : "没有搜索结果")
-                                     : panel.status;
+            const std::string status = panel.status.empty()
+                                           ? (local ? "文件夹里没有字幕文件" : "没有搜索结果")
+                                           : panel.status;
             fit_text(list, glyphs_.regular, status, x + 24.0f, y + 78.0f, 17.0f, kMuted,
                      width - 48.0f);
         }
@@ -4754,8 +4847,8 @@ class Fnvideo final : public app::Concept
                     label = "返回上级目录";
                 else if (hit.filename.empty())
                     label = "未命名字幕";
-                fit_text(list, glyphs_.regular, label,
-                         x + 28.0f, row_y, 18.0f, focused ? kInk : kMuted, width - 56.0f);
+                fit_text(list, glyphs_.regular, label, x + 28.0f, row_y, 18.0f,
+                         focused ? kInk : kMuted, width - 56.0f);
                 std::string meta;
                 if (!hit.format.empty())
                     meta += hit.format;
@@ -4775,8 +4868,8 @@ class Fnvideo final : public app::Concept
 
         // Words only - the face has no cross/circle glyph, matching the slider
         // panel's footer. The pad still belongs to update_player_menu.
-        ui::text(list, glyphs_.regular, local ? "上下选择 · 确定进入/标记 · 返回关闭"
-                                              : "上下选择 · 确定下载 · 返回关闭",
+        ui::text(list, glyphs_.regular,
+                 local ? "上下选择 · 确定进入/标记 · 返回关闭" : "上下选择 · 确定下载 · 返回关闭",
                  x + 24.0f, y + height - 26.0f, 14.0f, kFaint);
     }
 
@@ -5097,8 +5190,7 @@ class Fnvideo final : public app::Concept
             const float x = (kWidth - w) * 0.5f;
             const float y = 150.0f;
             list.rounded_rect({x, y, w, h}, 18.0f, kCoal.with_alpha(0.82f * alpha));
-            list.bordered_rect({x, y, w, h}, 18.0f, kClear, 1.5f,
-                               kWhite.with_alpha(0.16f * alpha));
+            list.bordered_rect({x, y, w, h}, 18.0f, kClear, 1.5f, kWhite.with_alpha(0.16f * alpha));
             ui::text(list, glyphs_.semibold, stick_hud_text_, x + 24.0f, y + 32.0f, 21.0f,
                      kInk.with_alpha(0.92f * alpha));
             const float tx = x + 24.0f;
@@ -5316,8 +5408,8 @@ class Fnvideo final : public app::Concept
             // cursor; offer the Options filter shortcut here too, or the hint
             // vanishes exactly when a player walks the categories and wants 筛选.
             if (rail_is_library(rail_) || rail_is_favorites(rail_))
-                hints[count++] = {
-                    ui::Button::options, active_filter_count() > 0 ? "重置筛选" : "筛选"};
+                hints[count++] = {ui::Button::options,
+                                  active_filter_count() > 0 ? "重置筛选" : "筛选"};
         }
         else if (zone_ == Zone::home)
         {
@@ -5347,15 +5439,14 @@ class Fnvideo final : public app::Concept
             // it is offered only when there is a description long enough to
             // fold - or already folded, to give 收起 back.
             const Item &shown = detail_item();
-            const bool expandable = !shown.synopsis.empty() &&
-                                    glyphs_.regular.font->wrap(shown.synopsis, 21.0f, 1240.0f)
-                                            .size() > 2u;
+            const bool expandable =
+                !shown.synopsis.empty() &&
+                glyphs_.regular.font->wrap(shown.synopsis, 21.0f, 1240.0f).size() > 2u;
             hints[0] = {ui::Button::cross, "播放 / 收藏 / 音轨 / 字幕"};
             hints[1] = {ui::Button::dpad, "选按钮与集数"};
             int i = 2;
             if (expandable || detail_synopsis_open_)
-                hints[i++] = {ui::Button::square,
-                              detail_synopsis_open_ ? "收起简介" : "展开简介"};
+                hints[i++] = {ui::Button::square, detail_synopsis_open_ ? "收起简介" : "展开简介"};
             hints[i++] = {ui::Button::circle, "返回"};
             hints[i++] = {ui::Button::l2, "上一栏"};
             hints[i++] = {ui::Button::r2, "下一栏"};
@@ -5824,7 +5915,8 @@ class Fnvideo final : public app::Concept
                         hero_pool > hero_slot_n_)
                     {
                         hero_slots_[static_cast<std::size_t>(i)] =
-                            wall_[(static_cast<std::size_t>(hero_slots_[static_cast<std::size_t>(j)]) +
+                            wall_[(static_cast<std::size_t>(
+                                       hero_slots_[static_cast<std::size_t>(j)]) +
                                    1u + static_cast<std::size_t>(i)) %
                                   static_cast<std::size_t>(hero_pool)];
                     }
@@ -6450,14 +6542,15 @@ class Fnvideo final : public app::Concept
         ui::text(list, glyphs_.semibold, "继续上次播放？", card.cx(), card.y + 62.0f, 32.0f, kInk,
                  Align::center);
         ui::text(list, glyphs_.regular,
-                 "上次停在 " + clock_text(static_cast<float>(resume_ask_seconds_)),
-                 card.cx(), card.y + 100.0f, 20.0f, kMuted, Align::center);
+                 "上次停在 " + clock_text(static_cast<float>(resume_ask_seconds_)), card.cx(),
+                 card.y + 100.0f, 20.0f, kMuted, Align::center);
         // Two equal buttons, side by side and centred under the line. The one
         // under the cursor gets the same glossed-accent treatment as the detail
         // page's 播放 key; the other stays a flat panel. The label sits dead
         // centre - the old x+60 / y+32 left it high and to the left of the
         // body, which is what read as 不协调.
-        const auto button = [&](const Rect &r, bool hot, const std::string &label) {
+        const auto button = [&](const Rect &r, bool hot, const std::string &label)
+        {
             if (hot)
             {
                 list.shadow({r.x, r.y + 4.0f, r.w, r.h}, 20.0f, 13.0f, Color::rgb(0x000000, 0.5f));
@@ -6755,8 +6848,7 @@ class Fnvideo final : public app::Concept
             }
             const bool wide = !item.backdrop.empty();
             service.request_art(key, wide ? item.backdrop : item.poster,
-                                wide ? fnvideo::kStillWidth
-                                     : fnvideo::kDetailStillFallbackWidth);
+                                wide ? fnvideo::kStillWidth : fnvideo::kDetailStillFallbackWidth);
         };
 
         if (zone_ == Zone::home)
@@ -6786,10 +6878,8 @@ class Fnvideo final : public app::Concept
             // every frame costs nothing once a picture is resident or in flight.
             const int count = library_count();
             const int first = grid_scroll_now() * kGridColumns;
-            const int end =
-                std::min(count, (grid_scroll_now() + kGridRows) * kGridColumns);
-            const int ahead =
-                std::min(count, (grid_scroll_now() + kGridRows + 4) * kGridColumns);
+            const int end = std::min(count, (grid_scroll_now() + kGridRows) * kGridColumns);
+            const int ahead = std::min(count, (grid_scroll_now() + kGridRows + 4) * kGridColumns);
             for (int i = first; i < end; ++i)
             {
                 ask_poster(items_[static_cast<std::size_t>(library_item(i))]);
@@ -6853,10 +6943,10 @@ class Fnvideo final : public app::Concept
     // 0 添加日期 (server / wall order), 1 评分, 2 标题, 3 年份.
     int sort_field_ = 0;
     float filter_toast_ = 0.0f; // "已重置筛选" hint, decays each frame (see update)
-    int continue_scroll_ = 0; // first visible card of the 继续观看 row
+    int continue_scroll_ = 0;   // first visible card of the 继续观看 row
     int detail_ = 0;
-    std::string detail_guid_;          // the title the page is about, stable across view rebuilds
-    std::string detail_error_;         // why the last detail fetch failed, if it did
+    std::string detail_guid_;  // the title the page is about, stable across view rebuilds
+    std::string detail_error_; // why the last detail fetch failed, if it did
     // The detail answer's transparent logo path, cached so request_art can ask
     // for it every frame without copying the Detail again. Cleared on open.
     std::string detail_logo_;
@@ -6944,10 +7034,10 @@ class Fnvideo final : public app::Concept
     // hand with L1/R1. hero_index_ stays the "card on screen" the rest of the
     // page reads (play/detail act on it); it is just sourced from the slot now.
     std::array<int, 3> hero_slots_{-1, -1, -1}; // the picked card indices into items_
-    int hero_slot_n_ = 0;                        // how many slots are filled (1..3)
-    int hero_slide_ = 0;                         // which slot is showing
-    float hero_rotate_ = 0.0f;                   // seconds the current slide has been shown
-    float hero_swap_ = 1.0f;                      // 0→1 crossfade after a slide change
+    int hero_slot_n_ = 0;                       // how many slots are filled (1..3)
+    int hero_slide_ = 0;                        // which slot is showing
+    float hero_rotate_ = 0.0f;                  // seconds the current slide has been shown
+    float hero_swap_ = 1.0f;                    // 0→1 crossfade after a slide change
     unsigned seen_revision_ = 0;
     unsigned detail_revision_seen_ = 0;
     bool signed_in_ = false;
