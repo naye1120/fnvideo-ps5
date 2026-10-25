@@ -22,3 +22,7 @@ dist/
 *.sprx
 *.prx
 *.pkg
+
+# Local-only service credentials (plaintext). The build bundles this into the
+# package, but it must never be committed to the repository.
+assets/fnvideo.conf

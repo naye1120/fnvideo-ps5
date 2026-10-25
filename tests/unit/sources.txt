@@ -24,6 +24,7 @@ src/fnos/json.cpp
 src/fnos/library.cpp
 src/fnos/player.cpp
 src/fnos/service.cpp
+src/fnvideo/*.cpp
 src/gfx/draw_list.cpp
 src/gfx/font.cpp
 src/gfx/triangulate.cpp

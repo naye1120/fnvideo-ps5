@@ -208,8 +208,7 @@ void MusicPlayer::set_muted(bool muted)
 void MusicPlayer::apply_gain(float seconds)
 {
     if (mixer_ != nullptr)
-        mixer_->set_stream_gain(0,
-                                muted_ ? 0.0f : kBaseGain * (duck_ > 0.0f ? kDuckGain : 1.0f),
+        mixer_->set_stream_gain(0, muted_ ? 0.0f : kBaseGain * (duck_ > 0.0f ? kDuckGain : 1.0f),
                                 seconds);
 }
 

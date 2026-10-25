@@ -48,13 +48,10 @@ void log(const char *format, ...)
     sceKernelDebugOutText(0, line);
     // The markers around a song choice are mirrored through open()/write() into
     // a file of their own, because the log above travels through stdout, and a
-    // firmware that refuses freopen leaves that one empty. Only these lines:
-    // the shell's own heap summary runs once per frame for its first seconds.
-    if (hui_step_write != nullptr &&
-        (std::strncmp(line, "[HUI] play ", 11) == 0 ||
-         std::strncmp(line, "[HUI] decoder ", 14) == 0 ||
-         std::strncmp(line, "[HUI] stream ", 13) == 0 ||
-         std::strncmp(line, "[HUI] closing", 13) == 0))
+    // firmware that refuses freopen leaves that one empty. Every line goes
+    // through now: a crash takes the sandbox log with it, and the only thing
+    // that says where it happened is the last line that made it to the mirror.
+    if (hui_step_write != nullptr)
         hui_step_write(line, static_cast<int>(used) + 1);
 }
 

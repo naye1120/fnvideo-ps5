@@ -412,8 +412,8 @@ void Player::decode(const std::string &url, const std::vector<std::string> &head
     // over its own buffer.
     const AVInputFormat *guessed = nullptr;
     {
-        unsigned char *head = static_cast<unsigned char *>(
-            av_mallocz(kAvioBuffer + AVPROBE_PADDING_SIZE));
+        unsigned char *head =
+            static_cast<unsigned char *>(av_mallocz(kAvioBuffer + AVPROBE_PADDING_SIZE));
         if (head != nullptr)
         {
             sys::log("[HUI] decoder guess start");
@@ -544,8 +544,7 @@ void Player::decode(const std::string &url, const std::vector<std::string> &head
     int seconds = 0;
     if (format->duration > 0)
     {
-        const std::int64_t from =
-            format->start_time != AV_NOPTS_VALUE ? format->start_time : 0;
+        const std::int64_t from = format->start_time != AV_NOPTS_VALUE ? format->start_time : 0;
         seconds = static_cast<int>((format->duration - from) / AV_TIME_BASE);
         if (seconds < 0)
             seconds = 0;
@@ -554,9 +553,9 @@ void Player::decode(const std::string &url, const std::vector<std::string> &head
     // What the container turned out to be: the number a wrong-sounding track is
     // named by, since a 44.1 kHz file and a mis-picked stream look the same
     // until someone reads the rate back.
-    sys::log("[HUI] decoder open %s rate=%d ch=%d len=%d start=%lld",
-             avcodec_get_name(codec_id), context->sample_rate, context->ch_layout.nb_channels,
-             seconds, static_cast<long long>(format->start_time));
+    sys::log("[HUI] decoder open %s rate=%d ch=%d len=%d start=%lld", avcodec_get_name(codec_id),
+             context->sample_rate, context->ch_layout.nb_channels, seconds,
+             static_cast<long long>(format->start_time));
     state_.store(static_cast<int>(PlayerState::playing));
 
     std::vector<float> pcm;
@@ -611,10 +610,9 @@ void Player::decode(const std::string &url, const std::vector<std::string> &head
         // ID3 header): the seconds shown are the seconds since the music does.
         const std::int64_t base = stream->start_time != AV_NOPTS_VALUE ? stream->start_time : 0;
         const int stamp = decoded->best_effort_timestamp != AV_NOPTS_VALUE
-                              ? static_cast<int>(
-                                    av_rescale_q(decoded->best_effort_timestamp - base,
-                                                 stream->time_base, AV_TIME_BASE_Q) /
-                                    AV_TIME_BASE)
+                              ? static_cast<int>(av_rescale_q(decoded->best_effort_timestamp - base,
+                                                              stream->time_base, AV_TIME_BASE_Q) /
+                                                 AV_TIME_BASE)
                               : static_cast<int>(counted / audio::kSampleRate);
         position_.store(std::max(0, stamp - heard));
     };

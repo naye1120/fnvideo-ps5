@@ -68,6 +68,13 @@ print(title_id)
 PY
 )
 
+app_version=$(python3 - "$param" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as source:
+    print(json.load(source).get("contentVersion", ""))
+PY
+)
+
 # Loader/container constants validated on firmware 6.02 and 12.70. These are
 # deliberately separate from the public application version in param.json.
 module_sdk=0x02000009
@@ -124,6 +131,16 @@ if (( ${#pacbrew_packages[@]} > 0 || ${#pacbrew_includes[@]} > 0 || ${#pacbrew_a
     mapfile -d '' -t pacbrew_libs < <(python3 -c \
         'import json,sys; [print(v, end="\0") for v in json.loads(sys.argv[1])["libs"]]' \
         "$pacbrew_resolution")
+    # Libs.private is not linker-only: libwebp and libsharpyuv both list
+    # -D_THREAD_SAFE there, and libavcodec's x264 dependency adds -lpthread,
+    # which this SDK does not ship as a library (it links -pthread instead).
+    # lld rejects both, so keep only flags a linker understands.
+    linker_libs=()
+    for lib in "${pacbrew_libs[@]}"; do
+        [[ $lib == -D* || $lib == -lpthread ]] && continue
+        linker_libs+=("$lib")
+    done
+    pacbrew_libs=("${linker_libs[@]}")
     pacbrew_root=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["root"])' \
         "$pacbrew_resolution")
     for include in "${pacbrew_includes[@]}"; do
@@ -301,7 +318,8 @@ done
 "$tool" self --inspect --file "$app/eboot.bin"
 
 printf '==> [zip] Archiving the application folder\n'
-(cd "$dist" && python3 -m zipfile -c "$title_id.zip" "$title_id")
+zip_name="飞牛影视-V${app_version}-尝鲜版.zip"
+(cd "$dist" && python3 -m zipfile -c "$zip_name" "$title_id")
 
 if [[ $format == ffpkg || $format == all ]]; then
     ufs2tool=$(bash "$root/tools/setup-packaging-dependencies.sh" ffpkg)
@@ -325,6 +343,6 @@ if [[ $format == ffpfsc || $format == all ]]; then
 fi
 
 printf 'Build complete.\nApp folder: %s\n' "$app"
-printf 'Folder ZIP: %s\n' "$dist/$title_id.zip"
+printf 'Folder ZIP: %s\n' "$dist/$zip_name"
 [[ $format != ffpkg && $format != all ]] || printf 'FFPKG:     %s\n' "$dist/$title_id.ffpkg"
 [[ $format != ffpfsc && $format != all ]] || printf 'FFPFSC:    %s\n' "$dist/$title_id.ffpfsc"

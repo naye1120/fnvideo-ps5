@@ -64,7 +64,10 @@ class Mixer
   public:
     static constexpr std::size_t kVoices = 32;
     static constexpr std::size_t kQueue = 256;
-    static constexpr std::size_t kStreams = 2;     // music decks, for crossfades
+    // 0 is the menu music bed, 1 the music player's NAS stream, 2 the video
+    // player's. They are separate slots so the two designs can each own one:
+    // the shell keeps both alive and L1/R1 switches between them.
+    static constexpr std::size_t kStreams = 3;
     static constexpr std::size_t kMaxGrain = 1024; // frames per render call
 
     Mixer();
@@ -86,6 +89,10 @@ class Mixer
     bool swap_stream(std::size_t slot, StreamRing *ring);
     // Ramps a stream's gain to gain over seconds (0 = at once).
     bool set_stream_gain(std::size_t slot, float gain, float seconds);
+    // Stops reading a stream without draining it. The video player uses this
+    // for pause: the ring's played() count is its clock, so freezing the read
+    // keeps picture, sound and progress on the same instant.
+    bool set_stream_paused(std::size_t slot, bool paused);
 
     // ---- audio thread ----
     // Renders frames of interleaved stereo S16 at kSampleRate.
@@ -120,6 +127,7 @@ class Mixer
         stop_all,
         stream_gain,
         stream_swap,
+        stream_pause,
     };
     struct Command
     {
@@ -167,6 +175,7 @@ class Mixer
     std::array<float, kStreams> stream_gain_{};
     std::array<float, kStreams> stream_target_{};
     std::array<float, kStreams> stream_step_{};
+    std::array<bool, kStreams> stream_paused_{};
     std::array<std::array<float, kMaxGrain * 2>, kStreams> stream_buffer_{};
     std::atomic<std::uint64_t> underruns_{0};
 };

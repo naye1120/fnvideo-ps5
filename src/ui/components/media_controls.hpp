@@ -108,8 +108,8 @@ struct MediaControlsStyle : ComponentStyle
     // False keeps the scrubber for show: the focus walks the button row and
     // never lands on the bar, so the thumb always follows the clock.
     bool focus_scrubber = true;
-    float auto_hide = 0.0f;     // seconds without input before it hides; 0 never hides
-    bool hide_paused = false;   // hide while paused as well
+    float auto_hide = 0.0f;   // seconds without input before it hides; 0 never hides
+    bool hide_paused = false; // hide while paused as well
     // up: from the scrubber; down, left and right: from the button row. Hand
     // the focus on instead of refusing.
     EdgeExits exits;

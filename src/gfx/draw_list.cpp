@@ -270,6 +270,21 @@ void DrawList::image(std::uint32_t texture, const Rect &r, const Rect &uv, Color
     set4(i.extra, uv.x, uv.y, uv.x + uv.w, uv.y + uv.h);
 }
 
+void DrawList::video(const Rect &r, const Rect &uv, float radius)
+{
+    // No texture of its own: the planes live on fixed units of the shader's
+    // own, so this instance joins the surrounding untextured run instead of
+    // breaking it with a bind.
+    Instance &i = append(0);
+    const Rect t = apply(r);
+    set4(i.rect, t.x, t.y, t.w, t.h);
+    const Color white = Color::rgb(0xffffff, 1.0f);
+    set_color(i.color_top, white);
+    set_color(i.color_bottom, white);
+    set4(i.params, radius * transform_.scale, 0.0f, 0.0f, static_cast<float>(Shape::video));
+    set4(i.extra, uv.x, uv.y, uv.x + uv.w, uv.y + uv.h);
+}
+
 float DrawList::text(const Font &font, std::uint32_t font_texture, std::string_view text, float x,
                      float baseline, float size, Color color, Align align, float tracking)
 {

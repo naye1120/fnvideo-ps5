@@ -12,6 +12,9 @@ cd "$root"
 bash tools/setup-native-dependencies.sh >/dev/null
 bash tools/run_clang_format.sh --check
 bash tools/run_clang_tidy.sh
+# The shaders only ever compile on the console, so a typo in one shows up as a
+# splash screen that never goes away. Compile them here as well.
+bash tools/check-shaders.sh
 
 mapfile -t repository_files < <(git ls-files --cached --others --exclude-standard)
 checked=0

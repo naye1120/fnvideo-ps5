@@ -66,7 +66,8 @@ class Service
     Library &library()
     {
         return library_;
-    }    ArtCache &art()
+    }
+    ArtCache &art()
     {
         return art_;
     }

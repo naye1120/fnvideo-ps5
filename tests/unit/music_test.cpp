@@ -108,6 +108,29 @@ TEST(Mixer, StreamsPlayOnTheMusicBusAndRampGain)
     EXPECT_GT(mixer.stream_underruns(), 0u); // the ring ran dry along the way
 }
 
+TEST(Mixer, PausedStreamKeepsItsClockAndOutputSilent)
+{
+    Mixer mixer;
+    StreamRing ring(4096);
+    mixer.attach_stream(0, &ring);
+    std::vector<float> constant(256 * 2, 0.5f);
+    ring.write(constant.data(), 256);
+    std::vector<std::int16_t> out(64 * 2);
+
+    // Pause before the first grain so no frame is consumed.
+    mixer.set_stream_gain(0, 1.0f, 0.0f);
+    mixer.set_stream_paused(0, true);
+    mixer.render(out.data(), 64);
+    EXPECT_EQ(ring.played(), 0u);
+    EXPECT_EQ(peak(out), 0.0);
+
+    // Resuming picks up exactly where the clock stopped.
+    mixer.set_stream_paused(0, false);
+    mixer.render(out.data(), 64);
+    EXPECT_EQ(ring.played(), 64u);
+    EXPECT_NEAR(peak(out), 0.5, 0.02);
+}
+
 TEST(MusicPlayer, PlaysEverySongInTurnThenStartsOver)
 {
     Mixer mixer;

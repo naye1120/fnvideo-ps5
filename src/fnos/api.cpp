@@ -316,8 +316,7 @@ bool Api::login(const std::string &username, const std::string &password,
 // mean a red line of text and a keyboard, although the credentials are kept
 // anyway. Both recoveries sleep on this worker thread, so no frame waits.
 bool Api::ask(const std::string &base, const std::vector<std::string> &headers,
-              const std::string &path, const std::string &body_json, Json *data,
-              std::string *error)
+              const std::string &path, const std::string &body_json, Json *data, std::string *error)
 {
     const char *method = body_json.empty() ? "GET" : "POST";
     std::vector<std::string> outgo = headers;
@@ -392,8 +391,8 @@ bool Api::tracks(int page, TrackPage *out, std::string *error)
 bool Api::tracks_page(int page, int size, TrackPage *out, std::string *error)
 {
     Json data;
-    if (!ask(base_, auth_headers(),
-             "/track/list?page=" + number(page) + "&size=" + number(size), {}, &data, error))
+    if (!ask(base_, auth_headers(), "/track/list?page=" + number(page) + "&size=" + number(size),
+             {}, &data, error))
         return false;
     return fill_page(data, out, track_of);
 }

@@ -7,6 +7,7 @@
 // into a fixed 128 MiB sceLibcMspace that is never unmapped.
 
 #include <errno.h>
+#include <stdarg.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -28,8 +29,97 @@ void sceLibcMspaceFree(void *mspace, void *address);
 int sceLibcMspacePosixMemalign(void *mspace, void **address, size_t alignment, size_t size);
 size_t sceLibcMspaceMallocUsableSize(const void *address);
 
-/* Fixed, process-lifetime heap: do not unmap underneath late C++ destructors. */
-#define HUI_HEAP_SIZE (128u * 1024u * 1024u)
+int64_t sceKernelGetDirectMemorySize(void);
+int sceKernelAvailableDirectMemorySize(int64_t search_start, int64_t search_end, size_t alignment,
+                                       int64_t *start_out, size_t *size_out);
+int sceKernelAllocateDirectMemory(int64_t search_start, int64_t search_end, size_t length,
+                                  size_t alignment, int memory_type, int64_t *start);
+int sceKernelMapDirectMemory(void **address, size_t length, int protection, int flags,
+                             int64_t start, size_t alignment);
+int sceKernelReleaseDirectMemory(int64_t start, size_t length);
+
+/* Fixed, process-lifetime heap: do not unmap underneath late C++ destructors.
+ *
+ * Where the memory comes from matters more than how much is asked for. This
+ * used to mmap anonymous pages, which the console serves out of *flexible*
+ * memory - a few hundred MB for the whole title, most of it taken by the
+ * program image before main() runs. That is why 512 MB failed and the chain
+ * settled on 256 MB, and 256 MB is the reason a 4K film died: the software
+ * decoder's own frame pool is about 100 MB before the app asks for anything,
+ * and three 4K pictures on top of that is the end of it.
+ *
+ * Direct memory is the other pool, and on this hardware it is about 2.3 GB
+ * (klog: "DMEM size: 0x90000000"). The reference implementation this port
+ * follows runs its malloc out of it and gets a 1.3 GB heap (stremio-ps5
+ * native/heap.c, which in turn credits the Kodi PS5 port). So does this now.
+ *
+ * What is *not* taken is as important: the hardware video decoder maps its
+ * buffers from the same pool, and it needs far more than a few. Kodi's PS5
+ * port allocates its decoder's CPU workspace from direct memory too, precisely
+ * because flexible memory is only about 448 MB and every thread stack comes out
+ * of it. So the reserve stays generous: a heap that ate the pool would leave
+ * the decoder short, send every film down the software path, and the software
+ * decoder's own frame pool is what ran this title out of memory in the first
+ * place.
+ */
+#define HUI_RESERVE_MB 1024
+
+/* Largest first. A mapping is lazy - untouched pages cost nothing - but it
+ * still has to fit in what is left, so the first size that maps wins. */
+static const size_t kHeapSizes[] = {
+    2048u * 1024u * 1024u, 1792u * 1024u * 1024u, 1536u * 1024u * 1024u, 1280u * 1024u * 1024u,
+    1024u * 1024u * 1024u, 768u * 1024u * 1024u,  512u * 1024u * 1024u,  256u * 1024u * 1024u,
+};
+/* The size that was actually mapped; zero until hui_heap_ready() has run. */
+static size_t hui_heap_size;
+/* Where it came from, for the log line and for the unmap on failure. */
+static int64_t hui_heap_direct_start = -1;
+
+/* One block of direct memory, CPU read/write. The two memory types and the
+ * two protections are the pairs the reference implementation and the Kodi
+ * port use on hardware; the first that works wins. */
+static void *hui_map_direct(size_t size)
+{
+    static const int types[] = {12, 0};
+    static const int protections[] = {0x03, 0x33};
+    int64_t limit = sceKernelGetDirectMemorySize();
+    for (unsigned t = 0; t < 2; t++)
+    {
+        int64_t start = -1;
+        if (sceKernelAllocateDirectMemory(0, limit, size, 0x4000, types[t], &start) != 0)
+            continue;
+        for (unsigned p = 0; p < 2; p++)
+        {
+            void *address = NULL;
+            if (sceKernelMapDirectMemory(&address, size, protections[p], 0, start, 0x4000) == 0 &&
+                address != NULL)
+            {
+                hui_heap_direct_start = start;
+                return address;
+            }
+        }
+        sceKernelReleaseDirectMemory(start, size);
+    }
+    return NULL;
+}
+
+/* The mirror file the runtime writes, so the size the heap got is in the log
+ * even when the app dies before it can log anything itself. Weak: the host
+ * build and the unit tests have no runtime shims. */
+extern int hui_step_write(const char *text, int length) __attribute__((weak));
+
+static void heap_note(const char *format, ...)
+{
+    if (hui_step_write == NULL)
+        return;
+    char line[128];
+    va_list arguments;
+    va_start(arguments, format);
+    int length = vsnprintf(line, sizeof line, format, arguments);
+    va_end(arguments);
+    if (length > 0)
+        hui_step_write(line, length < (int)sizeof line ? length : (int)sizeof line - 1);
+}
 
 static atomic_int hui_heap_state;
 static void *hui_heap_base;
@@ -81,25 +171,70 @@ static int hui_heap_ready(void)
                                                  memory_order_acq_rel, memory_order_acquire))
         return expected == 2;
 
-    void *base = mmap(NULL, HUI_HEAP_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
-    if (base == MAP_FAILED)
+    void *base = MAP_FAILED;
+    size_t size = 0;
+    /* Size the request from what the pool actually is, not from a constant:
+     * the console reports the total, and the decoder's share comes off the
+     * top. On hardware that is 2.3 GB - 800 MB, so the chain starts at
+     * 1.3 GB rather than trying and failing two sizes first. */
+    const int64_t direct_total = sceKernelGetDirectMemorySize();
+    size_t cap = SIZE_MAX;
+    if (direct_total > 0)
     {
-        atomic_store_explicit(&hui_heap_state, -1, memory_order_release);
-        return 0;
+        const int64_t reserve = (int64_t)HUI_RESERVE_MB << 20;
+        cap = direct_total > reserve ? (size_t)(direct_total - reserve) : (size_t)256 << 20;
+    }
+    for (size_t i = 0; i < sizeof kHeapSizes / sizeof kHeapSizes[0]; i++)
+    {
+        size = kHeapSizes[i];
+        if (size > cap)
+            continue;
+        base = hui_map_direct(size);
+        if (base == NULL)
+            continue;
+        void *mspace = sceLibcMspaceCreate("ps5-homebrew-ui", base, size, 0);
+        if (mspace != NULL)
+        {
+            hui_heap_base = base;
+            hui_heap_mspace = mspace;
+            hui_heap_size = size;
+            heap_note("[HUI] heap %zu MB of direct memory mapped (total %lld MB)\n", size >> 20,
+                      (long long)(direct_total >> 20));
+            atomic_store_explicit(&hui_heap_state, 2, memory_order_release);
+            return 1;
+        }
+        sceKernelReleaseDirectMemory(hui_heap_direct_start, size);
+        hui_heap_direct_start = -1;
     }
 
-    hui_heap_base = base;
-    hui_heap_mspace = sceLibcMspaceCreate("ps5-homebrew-ui", base, HUI_HEAP_SIZE, 0);
-    if (hui_heap_mspace == NULL)
+    /* No direct memory: fall back to anonymous pages, which the console serves
+     * out of flexible memory. Small, but a small heap that works beats no app
+     * at all - and the size chain says how small it had to go. */
+    heap_note("[HUI] heap: no direct memory; trying flexible\n");
+    for (size_t i = 0; i < sizeof kHeapSizes / sizeof kHeapSizes[0]; i++)
     {
-        hui_heap_base = NULL;
-        munmap(base, HUI_HEAP_SIZE);
-        atomic_store_explicit(&hui_heap_state, -1, memory_order_release);
-        return 0;
+        size = kHeapSizes[i];
+        base = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+        if (base == MAP_FAILED)
+            continue;
+        void *mspace = sceLibcMspaceCreate("ps5-homebrew-ui", base, size, 0);
+        if (mspace != NULL)
+        {
+            hui_heap_base = base;
+            hui_heap_mspace = mspace;
+            hui_heap_size = size;
+            heap_note("[HUI] heap %zu MB mapped (flexible)\n", size >> 20);
+            atomic_store_explicit(&hui_heap_state, 2, memory_order_release);
+            return 1;
+        }
+        munmap(base, size);
     }
 
-    atomic_store_explicit(&hui_heap_state, 2, memory_order_release);
-    return 1;
+    /* Nothing mapped: every allocation now goes to the default libc heap, which
+     * is small enough that the app will die during start-up. Say so. */
+    heap_note("[HUI] heap NOT mapped; falling back to the libc heap\n");
+    atomic_store_explicit(&hui_heap_state, -1, memory_order_release);
+    return 0;
 }
 
 static int hui_heap_owns(const void *address)
@@ -109,7 +244,7 @@ static int hui_heap_owns(const void *address)
         return 0;
     uintptr_t value = (uintptr_t)address;
     uintptr_t base = (uintptr_t)hui_heap_base;
-    return value >= base && value - base < HUI_HEAP_SIZE;
+    return value >= base && value - base < hui_heap_size;
 }
 
 void *__wrap_malloc(size_t size)
@@ -185,4 +320,11 @@ void hui_heap_stats(size_t *live_bytes, size_t *peak_bytes, size_t *blocks, size
         *blocks = atomic_load_explicit(&hui_heap_blocks, memory_order_relaxed);
     if (failures)
         *failures = atomic_load_explicit(&hui_heap_failures, memory_order_relaxed);
+}
+
+/* How much the heap could ever hold, so a log line can say "live out of
+ * capacity" instead of leaving the reader to know the constant. */
+size_t hui_heap_capacity(void)
+{
+    return hui_heap_size;
 }

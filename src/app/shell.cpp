@@ -138,21 +138,14 @@ void Shell::update(const InputFrame &input, float dt)
              true);
         feedback_.play(audio::Cue::tab, 1.0f, direction_ > 0 ? 0.3f : -0.3f);
     }
-    if (input.is_pressed(Action::touch))
-    {
-        info_open_ = !info_open_;
-        feedback_.play(info_open_ ? audio::Cue::modal_open : audio::Cue::modal_close);
-    }
-    else if (info_open_ && input.is_pressed(Action::back))
-    {
-        info_open_ = false;
-        feedback_.play(audio::Cue::modal_close);
-    }
+    // The design-info drawer ("DESIGN nn OF nn / WHAT IT SHOWS / SOURCE") was
+    // removed at the owner's request: with a single shipping design it only ever
+    // showed a Latin-font row of question marks where the Han title should be,
+    // so the touchpad no longer opens anything.
 
     // The active design sees everything the shell does not use; nothing at
     // all while the info panel covers it.
-    const std::uint32_t eaten =
-        kShellActions | (concepts_.size() > 1 ? kSwitchActions : 0u);
+    const std::uint32_t eaten = kShellActions | (concepts_.size() > 1 ? kSwitchActions : 0u);
     InputFrame forwarded = input;
     forwarded.pressed &= ~eaten;
     forwarded.released &= ~eaten;
@@ -246,72 +239,8 @@ void Shell::draw_chrome()
         chrome_.pop_opacity();
     }
 
-    // ---- info panel: a frosted drawer on the right ----
-    const float show = info_show_.value;
-    if (show > 0.01f)
-    {
-        constexpr float kWidth = 660.0f;
-        const float x = gfx::kVirtualWidth - kWidth * tween::clamp01(show) + 40.0f * (1.0f - show);
-        chrome_.rounded_rect({0, 0, gfx::kVirtualWidth, gfx::kVirtualHeight}, 0,
-                             Color::rgb(0x000000, 0.35f * show));
-        chrome_.push_opacity(tween::clamp01(show));
-        const gfx::Rect panel{x, 0, kWidth + 40, gfx::kVirtualHeight};
-        chrome_.glass(glass_texture_, panel, 0, white);
-        chrome_.rounded_rect(panel, 0, Color::rgb(0x0a0c14, 0.72f));
-        chrome_.line(x, 0, x, gfx::kVirtualHeight, 2, info.accent.with_alpha(0.7f));
-
-        const float left = x + 56;
-        float y = 110;
-        std::snprintf(text, sizeof(text), "DESIGN %02zu OF %02zu", current_ + 1, concepts_.size());
-        ui::text(chrome_, fonts_.semibold, text, left, y, 18, info.accent, gfx::Align::left, 3.0f);
-        y += 62;
-        ui::text(chrome_, fonts_.display, info.name, left, y, 46, white);
-        y += 20;
-        for (const std::string &line : fonts_.regular.font->wrap(info.tagline, 24, kWidth - 112))
-        {
-            y += 34;
-            ui::text(chrome_, fonts_.regular, line, left, y, 24, white.with_alpha(0.75f));
-        }
-        y += 70;
-        ui::text(chrome_, fonts_.semibold, "WHAT IT SHOWS", left, y, 18, white.with_alpha(0.55f),
-                 gfx::Align::left, 3.0f);
-        y += 14;
-        for (const char *technique : info.techniques)
-        {
-            bool first = true;
-            for (const std::string &line : fonts_.regular.font->wrap(technique, 22, kWidth - 150))
-            {
-                y += first ? 40 : 30;
-                if (first)
-                    chrome_.circle(left + 6, y - 8, 4, info.accent);
-                first = false;
-                ui::text(chrome_, fonts_.regular, line, left + 28, y, 22, white.with_alpha(0.9f));
-            }
-        }
-        y += 70;
-        ui::text(chrome_, fonts_.semibold, "SOURCE", left, y, 18, white.with_alpha(0.55f),
-                 gfx::Align::left, 3.0f);
-        y += 40;
-        ui::text(chrome_, fonts_.mono, info.source, left, y, 21, white.with_alpha(0.9f));
-        y += 34;
-        std::snprintf(text, sizeof(text), "sound set: %s", audio::sound_set_name(info.sounds));
-        ui::text(chrome_, fonts_.mono, text, left, y, 21, white.with_alpha(0.6f));
-
-        const ui::Hint hints[] = {
-            {ui::Button::l1, "Switch design", ui::Button::r1},
-            {ui::Button::touchpad, "Close"},
-        };
-        ui::HintLayout layout;
-        layout.size = 34;
-        layout.text_size = 22;
-        ui::draw_hints(chrome_, fonts_, glyphs, hints, 2, left, false, layout);
-        if (!version_.empty())
-        {
-            std::snprintf(text, sizeof(text), "ps5-homebrew-ui %s", version_.c_str());
-            ui::text(chrome_, fonts_.regular, text, left, 952, 18, white.with_alpha(0.4f));
-        }
-        chrome_.pop_opacity();
-    }
+    // The design-info drawer is gone by request; `info_open_` is never set, so
+    // nothing draws here. The FPS overlay below is the only remaining chrome.
 
     if (settings_.show_fps && telemetry_.fps > 0.0f)
     {

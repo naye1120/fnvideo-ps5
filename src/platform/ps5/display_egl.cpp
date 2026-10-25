@@ -9,6 +9,8 @@
 
 #include "platform/ps5/system.hpp"
 
+#include <cstring>
+
 #include <EGL/eglext.h>
 #include <GL/glcorearb.h>
 #include <ps5_opengl_display.h>
@@ -52,10 +54,55 @@ constexpr EGLint kContextAttributes[] = {
     EGL_NONE,
 };
 
+// The 10:10:10:2 + BT.2020 PQ window config an HDR10 scanout needs. Kept
+// separate from kConfigAttributes so a failure to find one falls back cleanly
+// to the RGBA8 SDR config rather than opening nothing.
+constexpr EGLint kPqConfigAttributes[] = {
+    EGL_SURFACE_TYPE,
+    EGL_WINDOW_BIT,
+    EGL_RENDERABLE_TYPE,
+    EGL_OPENGL_BIT,
+    EGL_RED_SIZE,
+    10,
+    EGL_GREEN_SIZE,
+    10,
+    EGL_BLUE_SIZE,
+    10,
+    EGL_ALPHA_SIZE,
+    2,
+    EGL_GL_COLORSPACE_KHR,
+    EGL_GL_COLORSPACE_BT2020_PQ_EXT,
+    EGL_NONE,
+};
+
 const char *gl_string(GLenum name)
 {
     const auto *value = reinterpret_cast<const char *>(glGetString(name));
     return value != nullptr ? value : "(null)";
+}
+
+// Diagnostic only. Asks the ps5-opengl EGL behind this app whether it can hand
+// back a 10-bit PQ (BT.2020) window config, which is what a real HDR10 scanout
+// needs: VLC gets there by patching mesa's Vulkan WSI to reformat the VideoOut
+// buffers, and we can only follow with GL if EGL exposes the same capability.
+// Returns whether a PQ config exists; open() records it in hdr_capable_ so the
+// shell can decide whether to offer the HDR output mode. Any EGL error the
+// probe provokes is cleared before it returns.
+bool probe_hdr_output(EGLDisplay display)
+{
+    const auto *exts = reinterpret_cast<const char *>(eglQueryString(display, EGL_EXTENSIONS));
+    const bool pq_ext =
+        exts != nullptr && strstr(exts, "EGL_EXT_gl_colorspace_bt2020_pq") != nullptr;
+    const bool cs_ext = exts != nullptr && strstr(exts, "EGL_KHR_gl_colorspace") != nullptr;
+
+    EGLConfig config = nullptr;
+    EGLint count = 0;
+    const bool chosen =
+        eglChooseConfig(display, kPqConfigAttributes, &config, 1, &count) && count >= 1;
+    eglGetError();
+    sys::log("[HUI] hdr-probe: ext bt2020_pq=%d gl_colorspace=%d pq_config_chosen=%d count=%d",
+             pq_ext ? 1 : 0, cs_ext ? 1 : 0, chosen ? 1 : 0, static_cast<int>(count));
+    return chosen;
 }
 
 } // namespace
@@ -81,12 +128,14 @@ bool Display::supports_display_modes()
 #endif
 }
 
-bool Display::open(int width, int height)
+bool Display::open(int width, int height, bool hdr)
 {
     EGLint major = 0;
     EGLint minor = 0;
     EGLint count = 0;
     EGLConfig config = nullptr;
+    requested_width_ = width;
+    requested_height_ = height;
 
     display_ = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     if (display_ == EGL_NO_DISPLAY)
@@ -118,11 +167,22 @@ bool Display::open(int width, int height)
         close();
         return false;
     }
-    if (!eglChooseConfig(display_, kConfigAttributes, &config, 1, &count) || count != 1)
+    hdr_ = false;
+    if (hdr && choose_pq_config(config))
     {
-        fail("eglChooseConfig");
-        close();
-        return false;
+        hdr_ = true;
+        sys::log("[HUI] hdr: 10-bit BT.2020 PQ scanout config selected");
+    }
+    else
+    {
+        if (hdr)
+            sys::log("[HUI] hdr: requested but SDK offers no PQ config, falling back to RGBA8");
+        if (!eglChooseConfig(display_, kConfigAttributes, &config, 1, &count) || count != 1)
+        {
+            fail("eglChooseConfig");
+            close();
+            return false;
+        }
     }
     // The PS5 backend owns the window: native handle 0 and NULL attributes.
     surface_ =
@@ -182,6 +242,7 @@ bool Display::open(int width, int height)
     if (width_ != width || height_ != height)
         sys::log("[HUI] warning: surface differs from the requested %dx%d", width, height);
 #endif
+    hdr_capable_ = probe_hdr_output(display_) || hdr_capable_;
     return true;
 }
 
@@ -215,6 +276,26 @@ void Display::close()
     context_ = EGL_NO_CONTEXT;
     width_ = 0;
     height_ = 0;
+    hdr_ = false;
+}
+
+bool Display::choose_pq_config(EGLConfig &config)
+{
+    EGLint count = 0;
+    const bool ok = eglChooseConfig(display_, kPqConfigAttributes, &config, 1, &count);
+    hdr_capable_ = ok && count >= 1;
+    // An unsupported EGL_GL_COLORSPACE_KHR can raise EGL_BAD_ATTRIBUTE here;
+    // consume it so the caller's fallback to the RGBA8 config is unaffected.
+    eglGetError();
+    return hdr_capable_;
+}
+
+bool Display::restart_hdr(bool hdr)
+{
+    const int width = requested_width_ != 0 ? requested_width_ : PS5_OPENGL_NATIVE_WIDTH;
+    const int height = requested_height_ != 0 ? requested_height_ : PS5_OPENGL_NATIVE_HEIGHT;
+    close();
+    return open(width, height, hdr);
 }
 
 const char *egl_error_name(EGLint error)

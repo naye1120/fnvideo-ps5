@@ -30,6 +30,13 @@ class StreamRing
     {
         return head_.load(std::memory_order_acquire) - tail_.load(std::memory_order_acquire);
     }
+    // Frames the audio thread has played out, ever. A video player reads this
+    // as its clock: what the listener is hearing is the only timebase that
+    // cannot drift away from the sound.
+    std::size_t played() const
+    {
+        return tail_.load(std::memory_order_acquire);
+    }
     std::size_t space() const
     {
         return capacity_ - available();

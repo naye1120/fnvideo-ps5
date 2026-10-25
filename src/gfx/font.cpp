@@ -220,6 +220,11 @@ std::vector<std::string> Font::wrap(std::string_view text, float size, float max
 {
     std::vector<std::string> lines;
     std::string line;
+    const auto flush = [&]()
+    {
+        lines.push_back(line);
+        line.clear();
+    };
     std::size_t index = 0;
     while (index <= text.size())
     {
@@ -227,27 +232,65 @@ std::vector<std::string> Font::wrap(std::string_view text, float size, float max
         const std::string_view paragraph = text.substr(
             index, newline == std::string_view::npos ? std::string_view::npos : newline - index);
         std::size_t word_start = 0;
-        line.clear();
         while (word_start <= paragraph.size())
         {
             std::size_t word_end = paragraph.find(' ', word_start);
             if (word_end == std::string_view::npos)
                 word_end = paragraph.size();
             const std::string_view word = paragraph.substr(word_start, word_end - word_start);
-            const std::string candidate =
-                line.empty() ? std::string(word) : line + " " + std::string(word);
-            if (!line.empty() && measure(candidate, size) > max_width)
+            if (word.empty())
             {
-                lines.push_back(line);
-                line.assign(word);
+                if (word_end == paragraph.size())
+                    break; // trailing space only; the paragraph's words are done
+                word_start = word_end + 1;
+                continue;
+            }
+            if (measure(word, size) <= max_width)
+            {
+                const std::string candidate =
+                    line.empty() ? std::string(word) : line + " " + std::string(word);
+                if (!line.empty() && measure(candidate, size) > max_width)
+                {
+                    flush();
+                    line.assign(word);
+                }
+                else
+                {
+                    line = candidate;
+                }
             }
             else
             {
-                line = candidate;
+                // The word on its own is wider than the column: a CJK run with no
+                // spaces, or a long URL. Such a word can never break at a space, so
+                // the old space-only wrap emitted it as one line that spilled past
+                // the right edge - the real reason a synopsis looked "cut off".
+                // Break it inside itself, one codepoint at a time; a single glyph
+                // still wider than the column is emitted alone rather than looping.
+                if (!line.empty())
+                    flush();
+                std::size_t ci = 0;
+                while (ci < word.size())
+                {
+                    const std::size_t cp_start = ci;
+                    next_codepoint(word, &ci); // advance past one UTF-8 codepoint
+                    const std::string_view ch = word.substr(cp_start, ci - cp_start);
+                    if (line.empty())
+                        line.assign(ch);
+                    else if (measure(line + std::string(ch), size) <= max_width)
+                        line += ch;
+                    else
+                    {
+                        flush();
+                        line.assign(ch);
+                    }
+                }
             }
+            if (word_end == paragraph.size())
+                break;
             word_start = word_end + 1;
         }
-        lines.push_back(line);
+        flush();
         if (newline == std::string_view::npos)
             break;
         index = newline + 1;

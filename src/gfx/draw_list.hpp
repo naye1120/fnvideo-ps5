@@ -90,6 +90,7 @@ enum class Shape : std::uint8_t
     star = 6,         // five-pointed star inscribed in the rect
     arc = 7,          // ring sector: gauges, spinners, radial menus
     chamfer = 8,      // rectangle with cut (45 degree) corners, optional border
+    video = 9,        // a video frame from its own YUV planes, converted by the shader
 };
 
 // One instanced quad; field order matches the vertex attributes.
@@ -167,6 +168,12 @@ class DrawList
     // images that fade out need no cover-up rectangle.
     void image_gradient(std::uint32_t texture, const Rect &r, const Rect &uv, Color top,
                         Color bottom, float radius = 0.0f);
+    // A video frame, drawn from the planes GlBatch::update_video_texture took
+    // rather than from an RGBA texture: the shader does the colour conversion
+    // and the scaling, so a 4K film costs the CPU one upload and no sws pass.
+    // uv selects the part of the frame to show (see cover_uv), exactly as it
+    // does for image().
+    void video(const Rect &r, const Rect &uv, float radius = 0.0f);
     // The blurred copy of what is behind r (see gfx::Renderer), for frosted
     // panels. texture is the frame's glass texture.
     void glass(std::uint32_t texture, const Rect &r, float radius, Color tint);

@@ -6,6 +6,7 @@
 
 #ifdef HUI_PS5
 #include "gfx/renderer.hpp"
+#include "platform/ps5/system.hpp"
 
 #include <GL/glcorearb.h>
 #endif
@@ -27,6 +28,9 @@ extern "C"
 #include <libavutil/imgutils.h>
 #include <libavutil/mem.h>
 #include <libswscale/swscale.h>
+// fnOS serves posters as .webp; this FFmpeg build cannot decode them, so they
+// are handled with libwebp below and only the remaining formats reach FFmpeg.
+#include <webp/decode.h>
 }
 
 namespace
@@ -44,6 +48,16 @@ int read_memory(void *user, std::uint8_t *buffer, int size)
     auto *source = static_cast<Memory *>(user);
     const std::size_t left = static_cast<std::size_t>(source->end - source->at);
     const std::size_t want = std::min(left, static_cast<std::size_t>(size > 0 ? size : 0));
+    if (want == 0)
+    {
+        // FFmpeg's custom-IO contract: a read that has run out of bytes must
+        // report end-of-stream as a negative AVERROR, never as 0. Returning 0
+        // makes the container probe treat "no bytes left" as "temporarily
+        // nothing, try again", which spins avformat_find_stream_info on some
+        // JPEGs (the .jpg posters that left grey tiles on the wall) and can
+        // stall the single art worker behind them.
+        return AVERROR_EOF;
+    }
     std::memcpy(buffer, source->at, want);
     source->at += want;
     return static_cast<int>(want);
@@ -56,6 +70,79 @@ bool decode_image(const std::string &bytes, int edge, std::vector<std::uint8_t> 
 {
     if (bytes.empty() || rgba == nullptr || width == nullptr || height == nullptr)
         return false;
+
+    // fnOS posters are .webp, which this FFmpeg build has no decoder for. Catch
+    // the "RIFF....WEBP" header and route them through libwebp, which the
+    // PacBrew sysroot ships. Everything else (png/jpeg) still falls through to
+    // FFmpeg below.
+    if (bytes.size() >= 12 && std::memcmp(bytes.data(), "RIFF", 4) == 0 &&
+        std::memcmp(bytes.data() + 8, "WEBP", 4) == 0)
+    {
+        WebPDecoderConfig config;
+        if (!WebPInitDecoderConfig(&config))
+        {
+            return false;
+        }
+        const std::uint8_t *data = reinterpret_cast<const std::uint8_t *>(bytes.data());
+        if (WebPGetFeatures(data, bytes.size(), &config.input) != VP8_STATUS_OK)
+        {
+            return false;
+        }
+        const int w = config.input.width;
+        const int h = config.input.height;
+        if (w <= 0 || h <= 0)
+        {
+            return false;
+        }
+        // libwebp can scale while decoding. Asking for the full poster first
+        // made a 4K source allocate ~32 MB per tile before the texture upload
+        // shrank it to 512, which is exactly the kind of spike the console
+        // heap cannot afford on a wall of artwork.
+        int out_w = w;
+        int out_h = h;
+        if (edge > 0)
+        {
+            const int longest = std::max(w, h);
+            if (longest > edge)
+            {
+                const double scale = static_cast<double>(edge) / static_cast<double>(longest);
+                out_w = std::max(1, static_cast<int>(static_cast<double>(w) * scale + 0.5));
+                out_h = std::max(1, static_cast<int>(static_cast<double>(h) * scale + 0.5));
+            }
+        }
+        config.output.colorspace = MODE_RGBA;
+        if (out_w != w || out_h != h)
+        {
+            config.options.use_scaling = 1;
+            config.options.scaled_width = out_w;
+            config.options.scaled_height = out_h;
+        }
+        if (WebPDecode(data, bytes.size(), &config) != VP8_STATUS_OK)
+        {
+            WebPFreeDecBuffer(&config.output);
+            return false;
+        }
+        const int decoded_w = config.output.width;
+        const int decoded_h = config.output.height;
+        const int stride = config.output.u.RGBA.stride;
+        const std::uint8_t *pixels = config.output.u.RGBA.rgba;
+        if (decoded_w <= 0 || decoded_h <= 0 || stride <= 0 || pixels == nullptr)
+        {
+            WebPFreeDecBuffer(&config.output);
+            return false;
+        }
+        rgba->resize(static_cast<std::size_t>(decoded_w) * decoded_h * 4u);
+        for (int row = 0; row < decoded_h; ++row)
+        {
+            std::memcpy(rgba->data() + static_cast<std::size_t>(row) * decoded_w * 4u,
+                        pixels + static_cast<std::size_t>(row) * stride,
+                        static_cast<std::size_t>(decoded_w) * 4u);
+        }
+        *width = decoded_w;
+        *height = decoded_h;
+        WebPFreeDecBuffer(&config.output);
+        return true;
+    }
 
     Memory source{reinterpret_cast<const std::uint8_t *>(bytes.data()),
                   reinterpret_cast<const std::uint8_t *>(bytes.data()) + bytes.size()};
@@ -210,7 +297,7 @@ void ArtCache::upload(gfx::Renderer &renderer)
         if (textures_.find(waiting.key) != textures_.end())
             continue;
         // Room for one more: drop the cover drawn longest ago.
-        while (textures_.size() + 1 > kKeep)
+        while (textures_.size() + 1 > keep_)
         {
             auto oldest = textures_.begin();
             for (auto it = textures_.begin(); it != textures_.end(); ++it)
@@ -228,6 +315,18 @@ void ArtCache::upload(gfx::Renderer &renderer)
         entry.used = ++clock_;
         entry.texture =
             renderer.batch().create_texture(entry.width, entry.height, waiting.pixels.data());
+        // The log's only way to tell "decoded" from "on the GPU". A picture
+        // that exists here and still does not appear points at the draw path,
+        // not at the fetch. Raised to 400 so every card in a library can be
+        // traced per key for one clean diagnostic round: a fetched key with no
+        // matching texture line is stuck in the upload/draw path, not the network.
+        static int logged = 0;
+        if (logged < 400)
+        {
+            ++logged;
+            sys::log("[HUI] art texture key=%s id=%u %dx%d", waiting.key.c_str(), entry.texture,
+                     entry.width, entry.height);
+        }
         textures_.emplace(waiting.key, entry);
     }
     incoming_.clear();
@@ -237,6 +336,9 @@ void ArtCache::upload(gfx::Renderer &renderer)
 // always empty; the tests have no GL context to upload into.
 void ArtCache::upload(gfx::Renderer &)
 {
+    // Named so the host build, where no texture is ever uploaded, does not
+    // report the budget as an unused field.
+    (void)keep_;
     incoming_.clear();
 }
 #endif

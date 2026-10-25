@@ -52,6 +52,26 @@ int hui_step_write(const char *text, int length)
 {
     if (text == NULL || length <= 0)
         return -1;
+    /* A second copy outside the sandbox, which is what makes a crash
+     * readable: the sandbox is torn down the moment the title dies, and the
+     * failures worth reading happen on the way down. Two candidates are tried
+     * because /app0 is mounted read-only on some setups and the title's own
+     * install directory is not visible from inside the sandbox on others.
+     * Best effort either way - the sandbox log stays the primary one. */
+    /* Two of these turn out to be the same file, and every line then lands in
+     * it twice, which makes the order of a crash unreadable. One is enough.
+     * /app0 is read-only on most setups and fails harmlessly. */
+    static const char *const kMirrorPaths[] = {"/app0/hui-steps.log",
+                                               "/data/homebrew/PPSA99102/hui-steps.log"};
+    for (size_t i = 0; i < sizeof kMirrorPaths / sizeof kMirrorPaths[0]; i++)
+    {
+        const int mirror = open(kMirrorPaths[i], O_WRONLY | O_APPEND | O_CREAT, 0644);
+        if (mirror >= 0)
+        {
+            (void)!write(mirror, text, (size_t)length);
+            close(mirror);
+        }
+    }
     const int fd = open(HUI_STEP_PATH, O_WRONLY | O_APPEND | O_CREAT, 0644);
     if (fd < 0)
         return -1;
@@ -61,7 +81,8 @@ int hui_step_write(const char *text, int length)
 }
 
 /* Returning from main or calling exit() crashes a native title; stay alive
- * until the shell closes the title. */__attribute__((noreturn)) void catchReturnFromMain(int status)
+ * until the shell closes the title. */
+__attribute__((noreturn)) void catchReturnFromMain(int status)
 {
     printf("[HUI] main returned status=%d\n", status);
     fflush(NULL);

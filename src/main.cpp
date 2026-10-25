@@ -10,14 +10,13 @@
 #include "app/tour.hpp"
 #include "audio/cues.hpp"
 #include "audio/mixer.hpp"
-#include "audio/music.hpp"
 #include "core/frame_stats.hpp"
 #include "core/input.hpp"
 #include "core/save_file.hpp"
 #include "core/settings.hpp"
 #include "core/version.hpp"
 #include "demo/catalog.hpp"
-#include "fnos/service.hpp"
+#include "fnvideo/service.hpp"
 #include "gfx/canvas.hpp"
 #include "gfx/renderer.hpp"
 #include "platform/ps5/audio_out.hpp"
@@ -32,6 +31,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <span>
 #include <string>
@@ -39,6 +39,7 @@
 
 extern "C" void hui_heap_stats(std::size_t *live_bytes, std::size_t *peak_bytes,
                                std::size_t *blocks, std::size_t *failures);
+extern "C" std::size_t hui_heap_capacity();
 
 namespace
 {
@@ -64,6 +65,11 @@ constexpr double kCollectSeconds = 240.0;
 constexpr int kCaptureWidth = 480;
 constexpr int kCaptureHeight = 270;
 
+// Package fingerprint so a device log grab states unambiguously which build is
+// actually running: the compile __TIME__ alone left three near-simultaneous
+// upload-path experiments indistinguishable. Bump this tag every measurement.
+constexpr const char *HUI_PKG_TAG = "v200-seek-event-driven-resume";
+
 void log_heap(std::uint64_t frames)
 {
     std::size_t live = 0;
@@ -71,17 +77,68 @@ void log_heap(std::uint64_t frames)
     std::size_t blocks = 0;
     std::size_t failures = 0;
     hui_heap_stats(&live, &peak, &blocks, &failures);
-    hui::sys::log("[HUI] heap frames=%llu live=%zu peak=%zu blocks=%zu failures=%zu",
-                  static_cast<unsigned long long>(frames), live, peak, blocks, failures);
+    hui::sys::log("[HUI] heap frames=%llu live=%zu/%zuMB peak=%zuMB blocks=%zu failures=%zu",
+                  static_cast<unsigned long long>(frames), live >> 20, hui_heap_capacity() >> 20,
+                  peak >> 20, blocks, failures);
 }
 
 // Opens at *resolution (an index into Settings::kResolutions), falling back
 // to 1080p; *resolution reports the mode that opened.
+
+// HDR10 scanout is a whole-session decision (EGL's mode is fixed once the
+// context opens, so toggling it means close()/open()). It stays off unless the
+// operator asks for it with HUI_FNVIDEO_HDR=1 *and* the ps5-opengl EGL really
+// hands back a 10-bit PQ surface, which open_display reports through
+// display.is_hdr_scanout(). With the flag unset the app is byte-for-byte the
+// ordinary SDR build.
+//
+// A console launch has no way to set an environment variable, so the same
+// switch also reads /app0/dev/hdr.txt - the install folder a PC can write over
+// FTP (/data/homebrew/<TITLE_ID>/dev/hdr.txt), the channel request.txt already
+// uses. Its content is optional: besides acting as the flag it may carry
+// "white=<nits>" and "peak=<nits>" overrides. Staying a file rather than a
+// request verb is deliberate - HDR must be decided before the display opens.
+bool hdr_requested()
+{
+    const char *on = std::getenv("HUI_FNVIDEO_HDR");
+    if (on != nullptr && on[0] == '1')
+        return true;
+    std::FILE *const handle = std::fopen("/app0/dev/hdr.txt", "rb");
+    return handle != nullptr && std::fclose(handle) == 0;
+}
+
+// Optional nits overrides: the environment first (the PC host), then the
+// hdr.txt marker (the console). Reference white places UI grey and held-back
+// SDR inside HDR; the peak hints the target TV's headroom.
+float hdr_env_nits(const char *env_name, const char *file_key, float fallback)
+{
+    const char *value = std::getenv(env_name);
+    if (value != nullptr && value[0] != '\0')
+    {
+        const float parsed = std::strtof(value, nullptr);
+        if (parsed > 0.0f)
+            return parsed;
+    }
+    char text[256] = {};
+    std::FILE *const handle = std::fopen("/app0/dev/hdr.txt", "rb");
+    if (handle == nullptr)
+        return fallback;
+    const std::size_t read = std::fread(text, 1, sizeof(text) - 1, handle);
+    std::fclose(handle);
+    text[read] = '\0';
+    const char *hit = std::strstr(text, file_key);
+    if (hit == nullptr)
+        return fallback;
+    const float parsed = std::strtof(hit + std::strlen(file_key), nullptr);
+    return parsed > 0.0f ? parsed : fallback;
+}
+
 bool open_display(hui::ps5::Display &display, int *resolution)
 {
     using hui::Settings;
+    const bool hdr = hdr_requested();
     const Settings::Resolution &mode = Settings::kResolutions[*resolution];
-    if (display.open(mode.width, mode.height))
+    if (display.open(mode.width, mode.height, hdr))
     {
         hui::sys::log("[HUI] display mode %s %dx%d", mode.label, display.width(), display.height());
         return true;
@@ -90,7 +147,7 @@ bool open_display(hui::ps5::Display &display, int *resolution)
         return false;
     hui::sys::log("[HUI] display mode %s failed, using 1080p", mode.label);
     *resolution = 0;
-    return display.open(Settings::kResolutions[0].width, Settings::kResolutions[0].height);
+    return display.open(Settings::kResolutions[0].width, Settings::kResolutions[0].height, hdr);
 }
 
 bool load_font(hui::gfx::Renderer &renderer, const char *name, hui::gfx::Font *font,
@@ -156,6 +213,7 @@ int main()
 {
     using namespace hui;
     sys::log("[HUI] entry");
+    sys::log("[HUI] build %s %s tag=%s", __DATE__, __TIME__, HUI_PKG_TAG);
     sys::log("[HUI] storage dir=%d", save::ensure_directory(kDataRoot) ? 1 : 0);
 
     // The display opens at the saved resolution (1080p if that fails).
@@ -188,7 +246,23 @@ int main()
         sys::log("[HUI] fatal: renderer init failed");
         sys::park();
     }
-    // Han glyphs for the music player. Not fatal: the design checks for it and
+    // HDR10 output only when the scanout really is a 10-bit PQ surface: the env
+    // flag asked for it and the EGL fell back to nothing. Turning the shader's
+    // PQ domain on against an SDR buffer would darken the whole picture, so this
+    // keys off is_hdr_scanout(), not the request. Off here leaves every frame
+    // on the existing SDR path.
+    if (display.is_hdr_scanout())
+    {
+        const float white = hdr_env_nits("HUI_FNVIDEO_HDR_WHITE", "white=", 203.0f);
+        const float peak = hdr_env_nits("HUI_FNVIDEO_HDR_PEAK", "peak=", 1000.0f);
+        renderer.batch().set_hdr_output(true, white, peak);
+        sys::log("[HUI] hdr: PQ scanout active, white=%.0fnits peak=%.0fnits", white, peak);
+    }
+    else if (hdr_requested())
+    {
+        sys::log("[HUI] hdr: requested but no PQ surface obtained, staying SDR");
+    }
+    // Han glyphs for the film library. Not fatal: the design checks for it and
     // falls back to the Latin faces, which simply cannot show Chinese.
     if (!load_font(renderer, "wenquanyi-cjk.huifont", &cjk, &fonts.cjk))
         sys::log("[HUI] cjk font missing, Chinese text will draw blank");
@@ -203,16 +277,11 @@ int main()
     pad.open();
     InputTracker tracker;
     audio::Mixer mixer;
-    // The music stream attaches to the mixer before the audio thread starts.
-    audio::MusicPlayer music;
-    const int tracks = music.init(mixer, std::string(kAssets) + "/audio/music",
-                                  static_cast<std::uint64_t>(sys::monotonic_us()));
-    sys::log("[HUI] music songs=%d", tracks);
-    // The NAS player takes the second slot of the mixer; attaching must happen
-    // before the audio thread runs, or the first buffer is played into a mixer
-    // that is not reading it yet.
-    fnos::Service &service = fnos::Service::instance();
-    sys::log("[HUI] fnos library started=%d", service.start(mixer, kDataRoot) ? 1 : 0);
+    // The video player streams into its own mixer slot; attaching is only
+    // valid before the audio thread starts reading. There is deliberately no
+    // menu music player: the old 飞牛 standby bed kept playing under the film
+    // and was the "待机背景音乐" the owner asked to remove.
+    fnvideo::Service::instance().attach_audio(mixer);
     ps5::AudioOut audio_out;
     audio_out.start(mixer);
     audio::SoundBank sounds;
@@ -276,6 +345,28 @@ int main()
     int fps_frames = 0;
     PadSample samples[64];
     gfx::Canvas capture;
+    // A picture of the screen, written where it survives the title closing.
+    // Reading the display surface back is slow, so the frame is drawn a second
+    // time into this small off-screen target instead - the same trick the tour
+    // uses. It is taken on request rather than on a timer: a capture costs
+    // 200-350 ms, and doing that every five seconds is a stutter in the middle
+    // of the very thing being measured.
+    gfx::Canvas shot;
+    constexpr int kShotWidth = 1280;
+    constexpr int kShotHeight = 720;
+    // Leaving an empty file in the install folder asks for one picture; the
+    // request is consumed, so it happens once. Checking for it costs a stat
+    // twice a second. The folder is the persistent one the package lives in,
+    // not kDevRoot: that is inside the sandbox and is gone once the title
+    // closes, so a request dropped there would never be seen.
+    const auto shot_wanted = []() -> bool
+    {
+        const char *path = "/data/homebrew/PPSA99102/.shot";
+        if (std::fopen(path, "rb") == nullptr)
+            return false;
+        std::remove(path);
+        return true;
+    };
     std::int64_t last_frame_start = sys::monotonic_us();
     for (;;)
     {
@@ -292,14 +383,10 @@ int main()
         if (tour)
             input = tour->step(dt);
 
-        // Covers into GL, finished answers onto the shelves, a finished track
-        // into the next one. All of it on this thread, once per frame.
-        service.update(renderer);
-        // The bed is furniture for the menus. Once the NAS has a track in hand
-        // it is the one sound that must not be there: it fills the seconds
-        // before a stream starts, and that reads as the wrong song playing.
-        music.set_muted(service.current() != nullptr &&
-                        service.player().state() != fnos::PlayerState::stopped);
+        // The video library's posters are decoded off this thread and uploaded
+        // on it; this also advances local resume points and picture brightness.
+        fnvideo::Service::instance().update(renderer);
+        const fnvideo::Service::Playback video_pb = fnvideo::Service::instance().playback();
         shell.update(input, dt);
         if (shell.take_settings_changed())
         {
@@ -316,8 +403,6 @@ int main()
         {
             sounds.play(mixer, event.set == audio::SoundSet::count ? shell.sound_set() : event.set,
                         event);
-            if (event.cue == audio::Cue::complete || event.cue == audio::Cue::welcome)
-                music.duck();
         }
         if (shell.settings().haptics && feedback.rumble_strength > 0.0f)
             pad.rumble(feedback.rumble_strength, feedback.rumble_seconds);
@@ -329,8 +414,11 @@ int main()
                               static_cast<std::uint8_t>(accent.g * 255.0f),
                               static_cast<std::uint8_t>(accent.b * 255.0f));
         }
-        music.pump(dt);
 
+        // Queue the design's backdrop, scene and chrome before presenting.
+        // Without this the console clears the display and presents an empty
+        // layer list: the PC tour still looks right (it composes itself), but
+        // the real title shows nothing at all.
         shell.compose(renderer);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -354,6 +442,25 @@ int main()
             sys::log("[HUI] tour picture %s ok=%d", tour->capture().c_str(), ok ? 1 : 0);
             tour->capture_done();
             last_frame_start = sys::monotonic_us(); // saving is slow; the frame was not
+        }
+        else if (frames % 30 == 0 && shot_wanted())
+        {
+            // What is actually on the screen. The player writes the picture the
+            // decoder handed it to frame.ppm, so a report of "the image looks
+            // doubled" can be answered by comparing the two files instead of by
+            // asking for a photograph.
+            if (shot.texture() == 0)
+                shot.create(kShotWidth, kShotHeight, 1);
+            shot.bind();
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+            renderer.present(shot.framebuffer(), kShotWidth, kShotHeight);
+            glBindFramebuffer(GL_FRAMEBUFFER, shot.framebuffer());
+            const bool ok =
+                save_picture("/data/homebrew/PPSA99102/shot.bmp", kShotWidth, kShotHeight);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            sys::log("[HUI] shot %llu ok=%d", static_cast<unsigned long long>(frames), ok ? 1 : 0);
+            last_frame_start = sys::monotonic_us();
         }
         if (!display.swap())
         {
@@ -428,13 +535,18 @@ int main()
         // changes state, so it cannot bury the decoder's own markers. Two
         // threads write the same log, so the last line of a crash run says
         // where the other one had got to.
-        const int stream_state = static_cast<int>(service.player().state());
+        const int stream_state = video_pb.failed    ? 5
+                                 : video_pb.ended   ? 4
+                                 : video_pb.paused  ? 3
+                                 : video_pb.playing ? 2
+                                 : video_pb.opening ? 1
+                                                    : 0;
         if (stream_state != watched_state)
         {
             watched_state = stream_state;
             // Only while a stream is up: an idle title has nothing to
             // attribute, and beats at boot would bury the ladder's tail.
-            watched_beats = service.player().active() ? 30 : 0;
+            watched_beats = (video_pb.playing || video_pb.paused) ? 30 : 0;
         }
         if (watched_beats > 0 && frames % 30 == 0)
         {
@@ -443,8 +555,7 @@ int main()
             // apart from a muted route: the first climbs while the position
             // moves, the second sits still while nothing is heard.
             sys::log("[HUI] play beat state=%d pos=%d dry=%llu frames=%llu", stream_state,
-                     service.player().position(),
-                     static_cast<unsigned long long>(mixer.stream_underruns()),
+                     video_pb.position, static_cast<unsigned long long>(mixer.stream_underruns()),
                      static_cast<unsigned long long>(frames));
         }
         if (stats.count() == 600)
@@ -453,10 +564,9 @@ int main()
             stats.format(summary, sizeof(summary));
             sys::log("[HUI] %s draws=%zu shapes=%zu", summary, renderer.last_draw_calls(),
                      renderer.last_instances());
-            sys::log("[HUI] audio grains=%llu errors=%llu voices=%d music=%s underruns=%llu",
+            sys::log("[HUI] audio grains=%llu errors=%llu voices=%d underruns=%llu",
                      static_cast<unsigned long long>(audio_out.grains()),
                      static_cast<unsigned long long>(audio_out.errors()), mixer.active_voices(),
-                     music.current().c_str(),
                      static_cast<unsigned long long>(mixer.stream_underruns()));
             stats.reset();
             if (frames % 3600 < 600)

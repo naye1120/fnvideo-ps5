@@ -39,6 +39,13 @@ bool decode_image(const std::string &bytes, int edge, std::vector<std::uint8_t> 
 class ArtCache
 {
   public:
+    // `keep` is how many textures stay resident. The music shelf draws forty
+    // covers at most, so that is the default; the video wall shows two rows of
+    // bigger posters plus a hero and a still, and asks for its own number.
+    explicit ArtCache(std::size_t keep = kKeep) : keep_(keep)
+    {
+    }
+
     // The pixels a finished answer brought. Waiting to be uploaded.
     void stage(const std::string &key, std::vector<std::uint8_t> rgba, int width, int height);
     // Uploads what arrived since the last call. Render thread only.
@@ -77,6 +84,7 @@ class ArtCache
 
     std::unordered_map<std::string, Entry> textures_;
     std::vector<Incoming> incoming_;
+    std::size_t keep_ = kKeep;
     std::uint64_t clock_ = 0;
 };
 

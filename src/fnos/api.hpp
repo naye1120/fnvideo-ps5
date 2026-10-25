@@ -138,8 +138,7 @@ class Api
     // Every endpoint goes through this: it asks once, and recovers twice at
     // most - a transfer that died, and a session the NAS has forgotten.
     bool ask(const std::string &base, const std::vector<std::string> &headers,
-             const std::string &path, const std::string &body_json, Json *data,
-             std::string *error);
+             const std::string &path, const std::string &body_json, Json *data, std::string *error);
     // `password_hash` is already sha256 hex, which is what the endpoint wants.
     bool sign_in_with(const std::string &base, const std::string &username,
                       const std::string &password_hash, const std::string &device_id,

@@ -23,14 +23,19 @@ OPENGL_SDK := .deps/ps5-opengl/current
 override APP_DEFINITIONS := $(strip GL_GLEXT_PROTOTYPES=1 HUI_PS5=1 $(APP_DEFINITIONS))
 override APP_INCLUDE_PATHS := $(strip src $(OPENGL_SDK)/include $(APP_INCLUDE_PATHS))
 override APP_STATIC_ARCHIVES := $(strip .deps/ps5-opengl/libps5opengl-group.a $(APP_STATIC_ARCHIVES))
+# libSceVideodec2 (the hardware video decoder) has no stub in the payload SDK,
+# so one is generated from tooling/native/stubs/videodec2.c.
+VIDEODEC2_STUB := build/stubs/libSceVideodec2.so
 override APP_IMPORT_STUBS := $(strip $(OPENGL_SDK)/lib/libSceAgc.so \
-	$(OPENGL_SDK)/lib/libSceAgcDriver.so $(APP_IMPORT_STUBS))
+	$(OPENGL_SDK)/lib/libSceAgcDriver.so $(VIDEODEC2_STUB) $(APP_IMPORT_STUBS))
 # fnOS music over HTTP (libcurl) and every audio container the library holds
 # (FFmpeg). pkg-config resolves the transitive OpenSSL, zlib, zstd, libpsl,
 # bz2, lzma and iconv archives. JSON is parsed by src/fnos/json.cpp on
 # purpose: jansson (and json-c) export json_object and friends, which the
 # OpenGL SDK's libpsbc.ps5.a already defines through its bundled parson.
-PACBREW_PACKAGES ?= libcurl libavformat libavcodec libavutil libswresample libswscale
+# Posters come back from fnOS as .webp, which this FFmpeg build does not
+# decode, so artwork is decoded with libwebp (--static pulls in libsharpyuv).
+PACBREW_PACKAGES ?= libcurl libavformat libavcodec libavutil libswresample libswscale libwebp
 # The console's libc refuses fcntl on a socket in a sandboxed title, which
 # breaks every libcurl connect; src/fnos/console_curl.c answers it instead.
 override APP_WRAP_SYMBOLS := $(strip fcntl $(APP_WRAP_SYMBOLS))
@@ -132,19 +137,22 @@ $(RUNTIME): $(RUNTIME_INPUTS)
 	@printf '%s\n' '==> [libc] Generating the missing or outdated runtime'
 	@bash tools/rebuild-libc.sh
 
-app: $(RUNTIME) opengl
+$(VIDEODEC2_STUB): tooling/native/stubs/videodec2.c tooling/prospero-clang18
+	@bash tools/build-videodec2-stub.sh
+
+app: $(RUNTIME) opengl $(VIDEODEC2_STUB)
 	@printf '%s\n' '==> [app] Compiling, linking, signing, and assembling the app folder'
 	@bash tools/build.sh Folder
 
-ffpkg: $(RUNTIME) opengl
+ffpkg: $(RUNTIME) opengl $(VIDEODEC2_STUB)
 	@printf '%s\n' '==> [ffpkg] Building the app folder and UFS2 image'
 	@bash tools/build.sh Ffpkg
 
-ffpfsc: $(RUNTIME) opengl
+ffpfsc: $(RUNTIME) opengl $(VIDEODEC2_STUB)
 	@printf '%s\n' '==> [ffpfsc] Building the app folder and compressed image'
 	@bash tools/build.sh Ffpfsc
 
-packages: $(RUNTIME) opengl
+packages: $(RUNTIME) opengl $(VIDEODEC2_STUB)
 	@printf '%s\n' '==> [packages] Building the app folder and both package formats'
 	@bash tools/build.sh All
 

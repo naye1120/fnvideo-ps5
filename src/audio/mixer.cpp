@@ -96,6 +96,17 @@ bool Mixer::set_stream_gain(std::size_t slot, float gain, float seconds)
     return post(command);
 }
 
+bool Mixer::set_stream_paused(std::size_t slot, bool paused)
+{
+    if (slot >= kStreams)
+        return false;
+    Command command;
+    command.type = CommandType::stream_pause;
+    command.slot = slot;
+    command.value = paused ? 1.0f : 0.0f;
+    return post(command);
+}
+
 bool Mixer::swap_stream(std::size_t slot, StreamRing *ring)
 {
     if (slot >= kStreams)
@@ -158,6 +169,9 @@ void Mixer::apply(const Command &command)
         break;
     case CommandType::stream_swap:
         streams_[command.slot] = command.ring;
+        break;
+    case CommandType::stream_pause:
+        stream_paused_[command.slot] = command.value != 0.0f;
         break;
     case CommandType::stream_gain:
     {
@@ -253,13 +267,14 @@ void Mixer::render_chunk(std::int16_t *out, int frames)
     {
         auto &buffer = stream_buffer_[s];
         std::size_t got = 0;
-        if (streams_[s] != nullptr)
+        const bool paused = stream_paused_[s];
+        if (streams_[s] != nullptr && !paused)
             got = streams_[s]->read(buffer.data(), static_cast<std::size_t>(frames));
         if (got < static_cast<std::size_t>(frames))
         {
             std::fill(buffer.begin() + static_cast<std::ptrdiff_t>(got * 2),
                       buffer.begin() + frames * 2, 0.0f);
-            if (streams_[s] != nullptr && stream_gain_[s] > 0.0f)
+            if (streams_[s] != nullptr && !paused && stream_gain_[s] > 0.0f)
                 underruns_.fetch_add(1, std::memory_order_relaxed);
         }
     }

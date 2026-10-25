@@ -138,6 +138,19 @@ void apply_common(CURL *easy, int timeout_seconds)
     curl_easy_setopt(easy, CURLOPT_CONNECTTIMEOUT_MS, 5000L);
     if (timeout_seconds > 0)
         curl_easy_setopt(easy, CURLOPT_TIMEOUT, static_cast<long>(timeout_seconds));
+    // A socket that connected and then stopped answering (a NAS that went away
+    // mid-transfer, a proxy hop that hangs) must not sit on the one serialised
+    // transfer gate forever: every later detail/play request queues behind it,
+    // the series page never gets its episodes, and a 播放 press looks stuck on
+    // 正在打开 with no play begin. CURLOPT_TIMEOUT caps the total for timed
+    // requests, but a stalled-but-alive socket can outrun the wall-clock check,
+    // so LOW_SPEED also aborts any transfer that receives under a byte per
+    // second for that window. The long-lived stream passes timeout_seconds == 0
+    // - it must not carry a *total* cap, but a 25 s gap in bytes is a dead
+    // stream, not a slow one, so it still releases the gate and recovers.
+    curl_easy_setopt(easy, CURLOPT_LOW_SPEED_LIMIT, 1L);
+    curl_easy_setopt(easy, CURLOPT_LOW_SPEED_TIME,
+                     timeout_seconds > 0 ? static_cast<long>(timeout_seconds) : 25L);
     curl_easy_setopt(easy, CURLOPT_TCP_KEEPALIVE, 1L);
     curl_easy_setopt(easy, CURLOPT_ACCEPT_ENCODING, "");
     curl_easy_setopt(easy, CURLOPT_USERAGENT, "PS5-FnMusic/1.0 (homebrew)");
@@ -162,6 +175,36 @@ std::mutex &transfer_gate()
     static std::mutex gate;
     return gate;
 }
+
+// Locks the transfer gate and, when a transfer holds it unusually long or
+// queued long to get it, says so. This is the probe that names the stage that
+// wedges the serialised network path - the same hang that starves 选集 and
+// playback - so the fix targets the stalling transfer, not guesswork.
+struct GateHold
+{
+    explicit GateHold(const char *label)
+        : lock(transfer_gate(), std::defer_lock), what(label)
+    {
+        const std::int64_t begin = sys::monotonic_us();
+        lock.lock();
+        waited_us = sys::monotonic_us() - begin;
+        start_us = sys::monotonic_us();
+    }
+    ~GateHold()
+    {
+        const std::int64_t held_us = sys::monotonic_us() - start_us;
+        if (held_us > 5000000 || waited_us > 3000000)
+        {
+            sys::log("[HUI] gate %s waited=%lldms held=%lldms", what,
+                     static_cast<long long>(waited_us / 1000),
+                     static_cast<long long>(held_us / 1000));
+        }
+    }
+    std::unique_lock<std::mutex> lock;
+    const char *what;
+    std::int64_t waited_us = 0;
+    std::int64_t start_us = 0;
+};
 
 void drop_cookie(std::vector<std::string> &headers)
 {
@@ -221,7 +264,7 @@ HttpResult http_request(const std::string &method, const std::string &url,
             curl_easy_setopt(easy, CURLOPT_POSTFIELDS, body.c_str());
             curl_easy_setopt(easy, CURLOPT_POSTFIELDSIZE, static_cast<long>(body.size()));
         }
-        const std::lock_guard<std::mutex> hold(transfer_gate());
+        const GateHold hold("http");
         const CURLcode code = curl_easy_perform(easy);
         long status = 0;
         char *redirect = nullptr;
@@ -271,7 +314,7 @@ std::string http_resolve_redirects(const std::string &url, std::vector<std::stri
         curl_easy_setopt(easy, CURLOPT_RANGE, "0-0");
         curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, write_append);
         curl_easy_setopt(easy, CURLOPT_WRITEDATA, &discarded);
-        const std::lock_guard<std::mutex> hold(transfer_gate());
+        const GateHold hold("http");
         const CURLcode code = curl_easy_perform(easy);
         char *redirect = nullptr;
         curl_easy_getinfo(easy, CURLINFO_REDIRECT_URL, &redirect);
@@ -329,7 +372,7 @@ bool ByteReader::open(const std::string &url, std::vector<std::string> headers, 
     sys::log("[HUI] stream open start");
     CURLcode code;
     {
-        const std::lock_guard<std::mutex> hold(transfer_gate());
+        const GateHold hold("http");
         code = curl_easy_perform(easy);
     }
     long status = 0;
@@ -386,12 +429,10 @@ std::size_t ByteReader::read(std::uint64_t offset, void *out, std::size_t count)
     // connection in a state the next request on the same handle has to guess
     // about, and the console's socket layer is not the POSIX one libcurl was
     // built for. Asking for exactly `count` bytes ends the response by itself.
-    const unsigned long long last =
-        size_ > 0 && offset + count > static_cast<std::uint64_t>(size_)
-            ? static_cast<unsigned long long>(size_) - 1
-            : static_cast<unsigned long long>(offset + count - 1);
-    std::snprintf(range, sizeof(range), "%llu-%llu", static_cast<unsigned long long>(offset),
-                  last);
+    const unsigned long long last = size_ > 0 && offset + count > static_cast<std::uint64_t>(size_)
+                                        ? static_cast<unsigned long long>(size_) - 1
+                                        : static_cast<unsigned long long>(offset + count - 1);
+    std::snprintf(range, sizeof(range), "%llu-%llu", static_cast<unsigned long long>(offset), last);
     curl_slist *list = append_headers(headers_);
     std::pair<char *, std::size_t> cursor{static_cast<char *>(out), count};
     curl_easy_setopt(easy, CURLOPT_HTTPHEADER, list);
@@ -413,7 +454,7 @@ std::size_t ByteReader::read(std::uint64_t offset, void *out, std::size_t count)
     }
     CURLcode code;
     {
-        const std::lock_guard<std::mutex> hold(transfer_gate());
+        const GateHold hold("http");
         code = curl_easy_perform(easy);
     }
     long status = 0;
