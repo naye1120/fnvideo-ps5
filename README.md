@@ -1,35 +1,39 @@
 <div align="center">
 
-# 飞牛音乐 · PS5 版
+# 飞牛影视 · PS5 版
 
-**把飞牛 fnOS NAS 上的音乐库，搬到 PS5 主界面里播放。**
+**把飞牛 fnOS NAS 上的影视库，搬到 PS5 主界面里播放。**
 
-PS5 原生自制软件（homebrew），TITLE_ID `PPSA99101`，
+PS5 原生自制软件（homebrew），TITLE_ID `PPSA99102`，
 界面基于 [ps5-homebrew-ui](https://github.com/blackbearreloaded/ps5-homebrew-ui) 绘制。
 
-<img src="docs/media/fnmusic-home.png" width="860" alt="飞牛音乐主页：艺人栏与封面卡片">
+<img src="docs/media/fnvideo-home.png" width="860" alt="飞牛影视首页：分类栏与电影海报墙，含筛选与快捷条">
 
 </div>
 
 ## 这是什么
 
-一个跑在 PS5 上的音乐播放器，通过局域网连接你自己的飞牛 fnOS NAS，
-读取上面的音乐库并播放。启动时自动登录一次拿到令牌，之后不再读配置文件；
+一个跑在 PS5 上的影视播放器，通过局域网连接你自己的飞牛 fnOS NAS，
+读取上面的影视库并播放。启动时自动登录一次拿到令牌，之后不再读配置文件；
 账号密码只存在本机，退出登录即清除。
 
-成品有三页，都是手绘的原生界面：
+界面都是手绘的原生页面：
 
-1. **主页** —— 分类栏 + 封面卡片，浏览整个音乐库
-2. **播放页** —— 封面、进度条、当前曲目
-3. **歌词页** —— 跟随播放滚动的歌词
+1. **首页** —— 板块分类栏 + 海报墙，浏览整个影视库
+2. **库页** —— 全部影片，支持九维筛选
+3. **详情页** —— 简介、选集、音轨 / 字幕、收藏与播放
+4. **播放页** —— 硬件解码播放，进度、工具栏与音画切换
 
 ## 功能
 
-- **八个分类栏**：歌曲 / 歌单 / 专辑 / 艺人 / 风格 / 收藏 / 搜索 / 设置
-- **封面浏览**：卡片式封面墙，可切换大封面模式
-- **搜索**：在 NAS 音乐库里直接搜歌
-- **收藏**：一键把当前曲目加入收藏
-- **歌词页**：△ 随时呼出，跟随播放进度
+- **板块分类栏**：左侧分类栏上下切换，进入即加载对应板块
+- **海报墙**：卡片式封面墙，支持大封面 / Hero 行
+- **九维筛选**：分类 / 类型 / 分辨率 / 动态范围 / 音频 / 国家 / 年份 / 观看状态，
+  弹出式面板选择；服务端不筛选，改由客户端过滤，并对仅详情携带的字段做后台增量富集
+- **Options 快捷键**：干净的板块一键打开筛选（快速开始），已筛选的板块一键回到全部（快速重置）
+- **筛选只对当前板块生效**：切换板块自动重置筛选
+- **搜索**：在 NAS 影视库里直接搜片（支持拼音）
+- **详情与播放**：选集、多音轨 / 字幕切换，支持 HDR / 杜比视界与硬件解码
 - **设置页**：填服务器地址、账号、密码，登录 / 退出登录，查看本机编号
 - **系统集成**：启动磁贴、图标与 4K 背景图，符合 PS5 展示素材规范
 
@@ -37,14 +41,12 @@ PS5 原生自制软件（homebrew），TITLE_ID `PPSA99101`，
 
 | 按键 | 作用 |
 | --- | --- |
-| × | 打开 / 播放 |
+| × | 打开详情 / 播放·暂停 / 确认 |
 | ○ | 返回 / 逐级回退 |
-| □ | 大封面 / 回主页 |
-| △ | 歌词 |
-| Options | 收藏 |
-| 左摇杆 | 音量 |
-| 右摇杆 | 快进 / 快退 |
-| L1 / R1 | 上一曲 / 下一曲 |
+| □ | 键盘删除 / 详情快捷动作 |
+| △ | 键盘空格 |
+| Options | 筛选 / 重置筛选（库页、分类栏） |
+| 方向键 | 移动光标 · 上下选分类 · 快进快退 · 上开工具栏 |
 | L2 / R2 | 上一栏 / 下一栏 |
 | 触摸板键 | 调出系统键盘（搜索、账号输入） |
 
@@ -55,12 +57,12 @@ PS5 原生自制软件（homebrew），TITLE_ID `PPSA99101`，
 
 ```bash
 make deps              # 首次：安装并校验工具链与 OpenGL SDK
-make app               # 打包，产出 dist/PPSA99101
+make app               # 打包，产出 dist/PPSA99102
 make test-unit         # 单元测试
 make assets-check      # 校验展示素材（icon0.png、pic0/pic1.dds）
 ```
 
-装到主机：把 `dist/PPSA99101` 拷到 `/data/homebrew/`，或
+装到主机：把 `dist/PPSA99102` 拷到 `/data/homebrew/`，或
 `make deploy PS5_HOST=<地址>`。
 
 背景图 `sce_sys/pic0.dds` / `pic1.dds` 必须是 3840×2160 BC7 (DX10) 格式，
@@ -74,11 +76,12 @@ tools/prepare-assets.sh --background 背景图.png --texconv /path/to/texconv.ex
 
 | 路径 | 内容 |
 | --- | --- |
-| `src/concepts/fnmusic.cpp` | 本应用的全部界面（三页 + 设置面板） |
-| `src/fnos/` | 飞牛 fnOS 音乐 API 客户端（登录、列表、播放、流） |
-| `assets/fnos.conf` | 默认服务器配置（示例地址，真实内网地址不入库） |
+| `src/concepts/fnvideo.cpp` | 本应用的全部界面（首页 / 库页 / 详情 / 播放 / 设置） |
+| `src/fnvideo/` | 飞牛 fnOS 影视客户端：登录、列表、后台富集、authx 签名、播放、硬件解码、杜比视界、拼音搜索 |
+| `src/fnos/` | 共享底层设施：HTTP、JSON、封面图解码（`http` / `json` / `art`） |
+| `assets/fnvideo.conf` | 默认服务器配置（本机凭据，已被 `.gitignore` 排除，不入库） |
 | `sce_sys/` | 图标 `icon0.png` 与背景 `pic0/pic1.dds` |
-| `dist/PPSA99101/` | 打包产物（不入 git） |
+| `dist/PPSA99102/` | 打包产物（不入 git） |
 | `docs/` | 界面框架的完整文档（渲染、动效、声音、组件） |
 
 框架本身的架构与组件说明见
@@ -90,7 +93,7 @@ tools/prepare-assets.sh --background 背景图.png --texconv /path/to/texconv.ex
 
 - 界面框架：[ps5-homebrew-ui](https://github.com/blackbearreloaded/ps5-homebrew-ui) — BlackBearReloaded，GPL-3.0-or-later
 - 构建链：[ps5-native-app-boilerplate](https://github.com/blackbearreloaded/ps5-native-app-boilerplate)、[ps5-opengl](https://github.com/blackbearreloaded/ps5-opengl)
-- 音乐服务：飞牛 fnOS
+- 影视服务：飞牛 fnOS
 
 开发者：Naye · QQ 群：310630593
 

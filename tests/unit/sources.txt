@@ -7,7 +7,6 @@ src/app/shell.cpp
 src/app/tour.cpp
 src/audio/cues.cpp
 src/audio/mixer.cpp
-src/audio/music.cpp
 src/audio/wav.cpp
 src/concepts/*.cpp
 src/concepts/components/*.cpp
@@ -17,13 +16,9 @@ src/core/save_file.cpp
 src/core/settings.cpp
 src/core/version.cpp
 src/demo/catalog.cpp
-src/fnos/api.cpp
 src/fnos/art.cpp
 src/fnos/http.cpp
 src/fnos/json.cpp
-src/fnos/library.cpp
-src/fnos/player.cpp
-src/fnos/service.cpp
 src/fnvideo/*.cpp
 src/gfx/draw_list.cpp
 src/gfx/font.cpp

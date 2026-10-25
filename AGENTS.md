@@ -10,11 +10,12 @@ guessing.
 A reference for building console-grade user interfaces for PS5 homebrew with
 OpenGL 4.6, and one native app ("Homebrew UI Lab") that shows all of it.
 
-This checkout ships a product instead: **飞牛音乐**, a PS5 player for a fnOS
-(飞牛) NAS music library (`src/concepts/fnmusic.cpp` over the services in
-`src/fnos/`). `src/concepts/registry.cpp` registers only that design and the
-settings page, so the other designs stay as references and as test coverage;
-the home-screen icon, backgrounds and launch music are this app's.
+This checkout ships a product instead: **飞牛影视**, a PS5 player for a fnOS
+(飞牛) NAS video library (`src/concepts/fnvideo.cpp` over the client in
+`src/fnvideo/`, with the shared HTTP / JSON / cover-image plumbing under
+`src/fnos/`). `src/concepts/registry.cpp` registers only that design, so the
+other designs stay as references and as test coverage; the home-screen icon,
+backgrounds and launch audio are this app's.
 
 <!-- BEGIN:counts -->
 Right now: **21 designs**, **30 themes**, **99 components**.
@@ -58,9 +59,10 @@ src/ui/components/        the component library (one header + source per compone
 src/ui/components.hpp     includes every component
 src/ui/                   fonts, glyphs, motion helpers, themes, Painter widgets
 src/gfx/                  draw list, GL batch, fonts, backdrops, renderer
-src/audio/, src/core/     mixer, cues, music; input, springs, settings, save files
+src/audio/, src/core/     mixer, cues; input, springs, settings, save files
 src/concepts/             the designs; components/ holds the gallery's pages
-src/fnos/                 the NAS music client: HTTP, JSON, library worker, decoder, covers
+src/fnvideo/              the NAS video client: authx signing, listing, enrich, player, HW decode, Dolby Vision
+src/fnos/                 shared fnOS plumbing: HTTP, JSON, cover-image decoder
 src/app/                  the shell (L1/R1 switch), the tour, the design interface
 src/platform/ps5/         display, controller, audio output, system services
 src/runtime/              console libc entry points and the shims third-party ports need

@@ -22,7 +22,7 @@
 #include "core/save_file.hpp"
 #include "core/version.hpp"
 #include "demo/catalog.hpp"
-#include "fnos/service.hpp"
+#include "fnvideo/service.hpp"
 #include "gfx/gl_program.hpp"
 #include "gfx/renderer.hpp"
 #include "manifest.hpp"
@@ -188,7 +188,7 @@ int main(int argc, char **argv)
         !load_font(renderer, assets + "/fonts/press-start-2p.huifont", &pixel, &fonts.pixel) ||
         !load_font(renderer, assets + "/fonts/patrick-hand.huifont", &hand, &fonts.hand))
         return 1;
-    // Han glyphs for the music player's own page; the other designs never ask.
+    // Han glyphs for the video player's own page; the other designs never ask.
     if (!load_font(renderer, assets + "/fonts/wenquanyi-cjk.huifont", &cjk, &fonts.cjk))
         std::fprintf(stderr, "cjk font missing, Chinese draws blank\n");
     hui::demo::Catalog catalog;
@@ -269,32 +269,33 @@ int main(int argc, char **argv)
     const std::string packaged = hui::read_content_version("sce_sys/param.json");
     shell.set_version(packaged.empty() ? "host" : packaged);
 
-    // The music player photographs nothing worth comparing while it is asking
+    // The video player photographs nothing worth comparing while it is asking
     // for a server: every shelf is a login form. The preview host in
     // src/fnos/http.cpp answers a sign-in with a demo library, so the shelves,
     // the grid and the play page have rows to lay out. No audio device is
     // opened - the mixer only has to exist for the player to attach to.
     hui::audio::Mixer mixer;
-    hui::fnos::Service &music = hui::fnos::Service::instance();
-    music.start(mixer, data_root);
+    hui::fnvideo::Service &svc = hui::fnvideo::Service::instance();
+    svc.attach_audio(mixer);
+    svc.ensure_started();
 
     constexpr float kDt = 1.0f / 60.0f;
-    // The console's frame loop ticks the music service between its own updates;
+    // The console's frame loop ticks the video service between its own updates;
     // this host has a loop of its own, so the answers, the covers and the end of
     // a track have to be said here as well - and in the console's order, before
     // the page is asked to draw. Told afterwards, a finished answer is one frame
     // invisible to the page, and a shelf reads as an empty one.
     const auto tick = [&](const hui::InputFrame &input)
     {
-        music.update(renderer);
+        svc.update(renderer);
         shell.update(input, kDt);
     };
-    music.library().sign_in("http://preview.local", "admin", "hunter2");
+    svc.configure("http://preview.local", "admin", "hunter2");
     // The worker runs on the wall clock while the tour runs on a simulated one,
     // so the sign-in is given the time to come back before any frame is
     // photographed. `busy()` only covers the queue, and an answer that has
     // finished but not landed yet is exactly the state worth waiting out.
-    for (int pass = 0; pass < 300 && !music.library().signed_in(); ++pass)
+    for (int pass = 0; pass < 300 && !svc.view().signed_in; ++pass)
     {
         hui::InputFrame idle;
         idle.connected = true;
@@ -441,7 +442,7 @@ int main(int argc, char **argv)
         // seconds. A frame is not fed to the page while one of its reads is
         // still open, so a press lands on a page that already has its rows, and
         // one script lays out one page every run.
-        for (int pass = 0; pass < 300 && music.library().busy(); ++pass)
+        for (int pass = 0; pass < 300 && svc.view().busy; ++pass)
         {
             tick(idle_frame);
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -461,7 +462,7 @@ int main(int argc, char **argv)
             bool asked = false;
             for (int pass = 0, quiet = 0; pass < 1800 && quiet < 120; ++pass)
             {
-                if (music.library().busy())
+                if (svc.view().busy)
                 {
                     asked = true;
                     quiet = 0;

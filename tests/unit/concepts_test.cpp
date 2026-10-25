@@ -33,7 +33,7 @@ TEST_F(EveryConcept, DescribesItself)
         EXPECT_GE(info.techniques.size(), 3u) << info.id;
         EXPECT_LT(info.sounds, hui::audio::SoundSet::count) << info.id;
     }
-    // The shipped app is 飞牛音乐 alone: L1/R1 no longer have a second page to
+    // The shipped app is 飞牛影视 alone: L1/R1 no longer have a second page to
     // reach, so the registry only has to hold the player itself.
     EXPECT_FALSE(ids.empty());
 }

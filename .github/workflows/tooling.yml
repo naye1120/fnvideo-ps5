@@ -197,5 +197,5 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --generate-notes \
-              --title "飞牛音乐 $VERSION"
+              --title "飞牛影视 $VERSION"
           fi

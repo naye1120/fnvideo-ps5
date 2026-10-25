@@ -361,7 +361,7 @@ class Player
     // one-shot external decode intact; subtitle_at() draws from both.
     std::deque<SubtitleCue> external_cues_;
     std::deque<SubtitleBitmap> subtitle_bitmaps_;
-    int subtitle_serial_ = 0;
+    [[maybe_unused]] int subtitle_serial_ = 0;
 
 #ifdef HUI_PS5
     // Only the console decodes, so only the console needs a thread, a frame
