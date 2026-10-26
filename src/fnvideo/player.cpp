@@ -42,6 +42,7 @@ extern "C" std::size_t hui_heap_capacity();
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
@@ -636,6 +637,10 @@ void Player::stop_locked()
         // frame must not pick one up under the next session.
         dovi_curve_.clear();
     }
+    // The controller light starts over with the next film too: a stale tint
+    // from the old one would flash on the bar before the first new picture.
+    video_light_.store(0, std::memory_order_relaxed);
+    audio_level_.store(0.0f, std::memory_order_relaxed);
     if (mixer_ != nullptr)
     {
         mixer_->set_stream_gain(kSlot, 0.0f, 0.1f);
@@ -1078,6 +1083,15 @@ int Player::av_interrupt(void *opaque)
     // the decode thread returns and the next play's pthread_join cannot hang
     // the single Service worker behind a source that stopped answering.
     if (!self->keep_running_.load(std::memory_order_relaxed))
+    {
+        return 1;
+    }
+    // A seek the settle path just fired has to reach a reader that is parked
+    // inside a blocking av_read_frame near the tail; otherwise the request
+    // waits out the rw_timeout before the format context is repositioned. Abort
+    // the in-flight read so the loop returns to its top and performs
+    // avformat_seek_file - the exchange at that top clears this flag.
+    if (self->seek_request_.load(std::memory_order_relaxed) >= 0)
     {
         return 1;
     }
@@ -2165,11 +2179,26 @@ void Player::decode()
                             wait_us(100000);
                             continue;
                         }
-                        if (!at_end)
+                        if (at_end)
                         {
-                            sys::log("[HUI] video read rc=%d, giving up after %d retries", read,
-                                     errors);
+                            // The reader ran out of file, but this is not the
+                            // end of playback: the decoder may still be working
+                            // through a full queue, and the viewer can still
+                            // seek back into the tail. Mark the streams ended
+                            // (an undisturbed film backs out to the menu once
+                            // its own queue drains) yet KEEP THIS THREAD ALIVE:
+                            // a seek clears `eof` on the queues via flush(),
+                            // re-positions the format context and reading
+                            // resumes. Returning here is what made 快退/快进 die
+                            // in the last minutes - the settle-fired seek had no
+                            // reader left to run avformat_seek_file.
+                            packets.finish(false);
+                            audio_packets.finish(false);
+                            wait_us(20000);
+                            continue;
                         }
+                        sys::log("[HUI] video read rc=%d, giving up after %d retries", read,
+                                 errors);
                         break;
                     }
                     errors = 0;
@@ -2991,6 +3020,22 @@ void Player::decode()
                                                          frame->extended_data, frame->nb_samples);
                             const float *at = pcm.data();
                             std::size_t left = made > 0 ? static_cast<std::size_t>(made) : 0u;
+                            // Loudest sample in this rescaled chunk, for the
+                            // controller light's brightness pulse. Peak, not
+                            // RMS: a drum hit should move the lamp now, not a
+                            // chunk later. ~2k floats per 20 ms of sound.
+                            if (made > 0)
+                            {
+                                float peak = 0.0f;
+                                const std::size_t n = static_cast<std::size_t>(made) * 2u;
+                                for (std::size_t i = 0; i < n; ++i)
+                                {
+                                    const float a = std::fabs(pcm[i]);
+                                    if (a > peak)
+                                        peak = a;
+                                }
+                                audio_level_.store(peak, std::memory_order_relaxed);
+                            }
                             // Publish this frame's file time as the post-seek
                             // audio anchor BEFORE its samples enter the ring.
                             // Doing it after `ring_->write` left a window where
@@ -3622,6 +3667,12 @@ void Player::decode()
     }
 
 cleanup:
+    // Playback is over (natural end or stop). The reader may now be parked in
+    // the tail waiting to service a seek rather than having returned at EOF, so
+    // clear keep_running_ here: av_interrupt() reads it to abort any in-flight
+    // av_read_frame and the loop's top check breaks, letting the join below
+    // succeed instead of hanging on a reader that stays alive past EOF.
+    keep_running_.store(false);
     // The reader has to be gone before the format context it reads from is
     // freed, and before the queue holding its packets dies. `finish(true)`
     // wakes it out of a `get()` on the decode side and out of the byte-budget
@@ -3710,6 +3761,121 @@ void Player::recycle_locked(std::vector<std::uint8_t> &&pixels)
     }
     spare_.push_back(std::move(pixels));
 }
+
+namespace
+{
+
+// Mean colour of one decoded picture, packed 0xRRGGBB and blended toward the
+// colour the light already shows, so a cut slides the bar between hues instead
+// of snapping to them. The planes go up to the shader as they are; this reads
+// the same planes sparsely - every 8th luma column and row, every 4th of the
+// half-size chroma (about 65k reads for 1080p, a rounding error next to the
+// upload beside it) - and turns the mean Y'CbCr into an approximate RGB with
+// the BT.709 limited-range matrix. An ambient light has no pixels to be wrong
+// about, so the range and matrix of the film itself are not consulted. ICtCp
+// planes (Dolby Vision Profile 5) are not Y'CbCr at all; the caller keeps
+// those pictures at 0 = "no colour" and the bar holds the design's accent.
+std::uint32_t picture_tint(const std::uint8_t *y, const std::uint8_t *u, const std::uint8_t *v,
+                           int y_pitch, int c_pitch, int v_pitch, int width, int height,
+                           bool ten_bit, bool ten_bit_low, bool planar, std::uint32_t previous)
+{
+    // One stored sample as an 8-bit-equivalent value: the console's decoder
+    // leaves its ten bits low-aligned, FFmpeg's P010 high-aligned (see Frame).
+    const auto shrink = [ten_bit, ten_bit_low](std::uint32_t value) -> double
+    {
+        if (!ten_bit)
+            return static_cast<double>(value);
+        return static_cast<double>(ten_bit_low ? (value >> 2u) : (value >> 8u));
+    };
+    const auto clamp8 = [](double value) -> double
+    { return value < 0.0 ? 0.0 : (value > 255.0 ? 255.0 : value); };
+    double sum_y = 0.0, sum_u = 0.0, sum_v = 0.0;
+    double n_y = 0.0, n_c = 0.0;
+    for (int row = 0; row < height; row += 8)
+    {
+        const std::uint8_t *plane = y + static_cast<std::size_t>(row) * y_pitch;
+        if (ten_bit)
+        {
+            const std::uint16_t *p = reinterpret_cast<const std::uint16_t *>(plane);
+            for (int x = 0; x < width; x += 8)
+            {
+                sum_y += shrink(p[x]);
+                ++n_y;
+            }
+        }
+        else
+        {
+            for (int x = 0; x < width; x += 8)
+            {
+                sum_y += plane[x];
+                ++n_y;
+            }
+        }
+    }
+    const int cwidth = width / 2;
+    const int cheight = height / 2;
+    for (int row = 0; row < cheight; row += 4)
+    {
+        const std::uint8_t *pu = u + static_cast<std::size_t>(row) * c_pitch;
+        const std::uint8_t *pv = planar ? v + static_cast<std::size_t>(row) * v_pitch : nullptr;
+        for (int x = 0; x < cwidth; x += 4)
+        {
+            if (planar)
+            {
+                // FFmpeg's planar output: one U plane, one V plane.
+                if (ten_bit)
+                {
+                    sum_u += shrink(reinterpret_cast<const std::uint16_t *>(pu)[x]);
+                    sum_v += shrink(reinterpret_cast<const std::uint16_t *>(pv)[x]);
+                }
+                else
+                {
+                    sum_u += pu[x];
+                    sum_v += pv[x];
+                }
+            }
+            else
+            {
+                // Interleaved UV (NV12/P010): Cb Cr Cb Cr ...
+                if (ten_bit)
+                {
+                    const std::uint16_t *p = reinterpret_cast<const std::uint16_t *>(pu);
+                    sum_u += shrink(p[x * 2]);
+                    sum_v += shrink(p[x * 2 + 1]);
+                }
+                else
+                {
+                    sum_u += pu[x * 2];
+                    sum_v += pu[x * 2 + 1];
+                }
+            }
+            ++n_c;
+        }
+    }
+    if (n_y <= 0.0 || n_c <= 0.0)
+    {
+        return previous;
+    }
+    const double yy = (sum_y / n_y - 16.0) * (255.0 / 219.0);
+    const double cb = sum_u / n_c - 128.0;
+    const double cr = sum_v / n_c - 128.0;
+    const double r = clamp8(yy + 1.7928 * cr);
+    const double g = clamp8(yy - 0.2132 * cb - 0.5329 * cr);
+    const double b = clamp8(yy + 2.1124 * cb);
+    // A quarter of each new picture into the colour already shown; the first
+    // one (previous == 0) lands whole.
+    const bool fresh_session = previous == 0u;
+    const double mix = fresh_session ? 1.0 : 0.25;
+    const double pr = fresh_session ? 0.0 : static_cast<double>((previous >> 16) & 0xFFu);
+    const double pg = fresh_session ? 0.0 : static_cast<double>((previous >> 8) & 0xFFu);
+    const double pb = fresh_session ? 0.0 : static_cast<double>(previous & 0xFFu);
+    const auto pack = [clamp8](double value) -> std::uint32_t
+    { return static_cast<std::uint32_t>(clamp8(value)); };
+    return (pack(pr + (r - pr) * mix) << 16) | (pack(pg + (g - pg) * mix) << 8) |
+           pack(pb + (b - pb) * mix);
+}
+
+} // namespace
 
 std::uint32_t Player::frame(gfx::Renderer &renderer, int *width, int *height)
 {
@@ -3958,6 +4124,19 @@ std::uint32_t Player::frame(gfx::Renderer &renderer, int *width, int *height)
         const std::uint8_t *y = upload_.data();
         const std::uint8_t *u = y + upload_luma_;
         const std::uint8_t *v = upload_planar_ ? u + upload_chroma_ : nullptr;
+        // The controller light's colour input, off the same planes going up.
+        if (ictcp_.load(std::memory_order_relaxed))
+        {
+            video_light_.store(0, std::memory_order_relaxed);
+        }
+        else
+        {
+            video_light_.store(picture_tint(y, u, v, upload_y_pitch_, upload_c_pitch_,
+                                            upload_v_pitch_, upload_width_, upload_height_,
+                                            upload_ten_bit_, upload_ten_bit_low_, upload_planar_,
+                                            video_light_.load(std::memory_order_relaxed)),
+                               std::memory_order_relaxed);
+        }
         // A new reshaping curve is only ever published alongside a picture, so
         // this is the one place the table has to be checked. The offset is the
         // RPU's own "input offset of neutral value" (0.5, 0.5 for profile 5)

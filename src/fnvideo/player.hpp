@@ -225,6 +225,20 @@ class Player
         return decoder_.load(std::memory_order_relaxed);
     }
 
+    // Ambient values for the controller's light bar: the mean colour of the
+    // picture on screen (0xRRGGBB, 0 = not known yet - still opening, or the
+    // planes are ICtCp and have no Y'CbCr to average) and the peak of the
+    // newest audio chunk handed to the ring (0..1). Written by the player's
+    // own threads, read once per frame on the render thread.
+    std::uint32_t video_light() const
+    {
+        return video_light_.load(std::memory_order_relaxed);
+    }
+    float audio_level() const
+    {
+        return audio_level_.load(std::memory_order_relaxed);
+    }
+
   private:
     static void *run(void *user);
     void decode();
@@ -331,6 +345,13 @@ class Player
     // Volume is a player property, not a per-film one: start() applies the same
     // gain every time, and the mixer fades to it.
     std::atomic<float> gain_{1.0f};
+    // The controller light's two inputs (see video_light() / audio_level()).
+    // Atomics, not frame_mutex_ state: the render thread writes the colour as
+    // it uploads a picture, the audio thread writes the peak as it fills the
+    // ring, and the main loop reads both once per frame without waiting on
+    // either of them.
+    std::atomic<std::uint32_t> video_light_{0};
+    std::atomic<float> audio_level_{0.0f};
     // Selected tracks. Written before the worker starts and when the worker
     // reads the header; read by the toolbar on the render thread.
     std::atomic<int> selected_audio_{-1};

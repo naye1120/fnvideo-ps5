@@ -45,16 +45,22 @@ TEST(Font, LoadsAsciiAndSymbols)
     EXPECT_GT(font.line_height(40), font.ascent(40));
 }
 
-// The Han atlas is 22 MB, above read_file's 4 MiB default; a rejected read is
-// silent and leaves Chinese to the Latin faces, where every sign becomes '?'.
+// The full-CJK Han atlas is ~63 MB, far above read_file's 4 MiB default; a
+// rejected read is silent and leaves Chinese to the Latin faces, where every
+// sign becomes '?'.
 TEST(Font, LoadsTheHanAtlas)
 {
     Font font;
     std::string data;
     ASSERT_TRUE(hui::save::read_file(HUI_SOURCE_DIR "/assets/fonts/wenquanyi-cjk.huifont", &data,
-                                     48u << 20));
+                                     96u << 20));
     ASSERT_TRUE(font.load(data)) << font.error();
-    for (const std::uint32_t codepoint : {0x98DEu, 0x725Bu, 0x97F3u, 0x4E50u, 0x641Cu, 0x8BBEu})
+    // Simplified Han this app has always drawn, plus the traditional-form Han
+    // and kana a bilingual Chinese-Japanese subtitle needs: 語 (U+8A9E), 日
+    // (U+65E5), あ (U+3042), カ (U+30A2). GB2312 carried none of the last set,
+    // which is exactly what used to garble into '?'.
+    for (const std::uint32_t codepoint :
+         {0x98DEu, 0x725Bu, 0x97F3u, 0x4E50u, 0x641Cu, 0x8BBEu, 0x8A9Eu, 0x65E5u, 0x3042u, 0x30A2u})
         EXPECT_TRUE(font.has_glyph(codepoint)) << std::hex << codepoint;
     EXPECT_GT(font.measure("\xe9\xa3\x9e\xe7\x89\x9b\xe9\x9f\xb3\xe4\xb9\x90", 30.0f), 100.0f);
 }

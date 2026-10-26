@@ -2273,6 +2273,49 @@ class Fnvideo final : public app::Concept
             }
         }
 
+        // L1/R1 快进快退的长按连发节奏：与导航（左摇杆 / 方向键）同出一辙
+        // ——按下当帧先跳一次，之后按住越过 0.35s 起始延迟，每 0.11s 补跳
+        // 一次；松手或换向则取消长按。算出本帧该不该跳，交给下面的分支消费。
+        bool shoulder_prev_step = false;
+        bool shoulder_next_step = false;
+        {
+            constexpr float kShoulderRepeatDelay = 0.35f;
+            constexpr float kShoulderRepeatInterval = 0.11f;
+            const bool prev_edge = input.is_pressed(Action::page_prev);
+            const bool next_edge = input.is_pressed(Action::page_next);
+            const bool prev_hold = input.is_held(Action::page_prev);
+            const bool next_hold = input.is_held(Action::page_next);
+            if (shoulder_key_ != Action::count)
+                shoulder_hold_ = std::max(0.0f, shoulder_hold_ - dt);
+            if (prev_edge)
+            {
+                shoulder_prev_step = true;
+                shoulder_key_ = Action::page_prev;
+                shoulder_hold_ = kShoulderRepeatDelay;
+            }
+            else if (next_edge)
+            {
+                shoulder_next_step = true;
+                shoulder_key_ = Action::page_next;
+                shoulder_hold_ = kShoulderRepeatDelay;
+            }
+            else if (shoulder_key_ == Action::page_prev && prev_hold && shoulder_hold_ <= 0.0f)
+            {
+                shoulder_prev_step = true;
+                shoulder_hold_ = kShoulderRepeatInterval;
+            }
+            else if (shoulder_key_ == Action::page_next && next_hold && shoulder_hold_ <= 0.0f)
+            {
+                shoulder_next_step = true;
+                shoulder_hold_ = kShoulderRepeatInterval;
+            }
+            else if (!prev_hold && !next_hold)
+            {
+                shoulder_key_ = Action::count;
+                shoulder_hold_ = 0.0f;
+            }
+        }
+
         const int chip_count = player_chip_count();
         if (player_chip_ >= chip_count)
         {
@@ -2364,19 +2407,21 @@ class Fnvideo final : public app::Concept
             position_ = std::min(1.0f, position_ + 0.02f);
             feedback.play(audio::Cue::slider);
         }
-        else if (input.is_pressed(Action::page_prev))
+        else if (shoulder_prev_step)
         {
-            // L1 快退 / R1 快进: the standard ±10s skip on the shoulders, going
-            // through the same Player::seek settle path as the D-pad nudge.
+            // L1 快退：步长 ±30s（比左摇杆的 ±60s 温和一档），并支持上面的
+            // 长按连发。走同一 Player::seek 沉降路径，快退时 play.position
+            // 尚未提交，重复下发同一绝对目标不会跑飞。
             if (live)
-                service.seek_playback(play.position - 10);
+                service.seek_playback(play.position - 30);
             position_ = std::max(0.0f, position_ - 0.02f);
             feedback.play(audio::Cue::slider);
         }
-        else if (input.is_pressed(Action::page_next))
+        else if (shoulder_next_step)
         {
+            // R1 快进：同 L1，步长 ±30s 并支持长按连发。
             if (live)
-                service.seek_playback(play.position + 10);
+                service.seek_playback(play.position + 30);
             position_ = std::min(1.0f, position_ + 0.02f);
             feedback.play(audio::Cue::slider);
         }
@@ -4912,25 +4957,29 @@ class Fnvideo final : public app::Concept
         }
         constexpr float size = 36.0f;
         constexpr float line_h = 46.0f;
-        float widest = 0.0f;
-        for (const std::string &line : lines)
-        {
-            widest = std::max(widest, glyphs_.regular.measure(line, size));
-        }
         const float cx = kWidth * 0.5f;
         const float last_baseline = player_bar_ ? 950.0f : 984.0f;
         const float first_baseline = last_baseline - static_cast<float>(lines.size() - 1) * line_h;
-        const float top = first_baseline - size - 14.0f;
-        const float box_w = std::min(widest + 44.0f, kWidth - 160.0f);
-        const float box_h = static_cast<float>(lines.size()) * line_h + 18.0f;
-        list.rounded_rect({cx - box_w * 0.5f, top, box_w, box_h}, 12.0f, kCoal.with_alpha(0.62f));
+        // No backing panel now, so the white text gets a dark outline instead:
+        // the words are stamped into each of the eight neighbours and then drawn
+        // on top. A single offset shadow reads as a blurry smear over a bright
+        // sky; a stroke keeps the glyph edge crisp wherever the film goes white.
         float baseline = first_baseline;
         for (const std::string &line : lines)
         {
-            // A shadow keeps white text legible on a bright sky even where the
-            // panel is thin.
-            fit_text(list, glyphs_.regular, line, cx + 2.0f, baseline + 2.0f, size,
-                     kCoal.with_alpha(0.7f), kWidth - 160.0f, Align::center);
+            for (int oy = -1; oy <= 1; ++oy)
+            {
+                for (int ox = -1; ox <= 1; ++ox)
+                {
+                    if (ox == 0 && oy == 0)
+                    {
+                        continue;
+                    }
+                    fit_text(list, glyphs_.regular, line, cx + 2.0f * static_cast<float>(ox),
+                             baseline + 2.0f * static_cast<float>(oy), size,
+                             kCoal.with_alpha(0.85f), kWidth - 160.0f, Align::center);
+                }
+            }
             fit_text(list, glyphs_.regular, line, cx, baseline, size, kInk, kWidth - 160.0f,
                      Align::center);
             baseline += line_h;
@@ -4960,9 +5009,15 @@ class Fnvideo final : public app::Concept
             list.rounded_rect(box, 0.0f, Color::rgb(0x000000));
             list.video(shown, uv);
             // PGS/DVD sub-picture. The bitmap is authored against the subtitle
-            // stream's own canvas, so map that canvas into exactly the
-            // rectangle the film is shown in - not the whole screen, which is
-            // what stretched graphics subtitles to the edges on Kodi (#14866).
+            // stream's own canvas - the whole presentation frame, letterbox bars
+            // included - which is not the tight rectangle contain_rect carved out
+            // for the coded picture. Normalising a 16:9 canvas (Blu-ray subs are
+            // authored on 1920x1080) into a scope film's 2.39:1 rect stretches
+            // every glyph sideways and squashes it - the subtitles read 矮胖 on
+            //  wides. Fit the canvas into the screen with its own aspect instead:
+            // the bitmap's pixels stay square and the cue lands where the disc put
+            // it, bars and all (Kodi #14866 was the opposite bug - filling the
+            // whole screen rather than the picture).
             std::uint32_t sub_tex = 0;
             int sx = 0;
             int sy = 0;
@@ -4974,10 +5029,12 @@ class Fnvideo final : public app::Concept
                 service.subtitle_overlay(&sub_tex, &sx, &sy, &sw, &sh, &cw, &ch) && cw > 0 &&
                 ch > 0 && sw > 0 && sh > 0)
             {
-                const gfx::Rect placed{shown.x + (static_cast<float>(sx) / cw) * shown.w,
-                                       shown.y + (static_cast<float>(sy) / ch) * shown.h,
-                                       (static_cast<float>(sw) / cw) * shown.w,
-                                       (static_cast<float>(sh) / ch) * shown.h};
+                gfx::Rect sub_uv{0.0f, 0.0f, 1.0f, 1.0f};
+                const gfx::Rect frame = contain_rect(cw, ch, box, &sub_uv);
+                const gfx::Rect placed{frame.x + (static_cast<float>(sx) / cw) * frame.w,
+                                       frame.y + (static_cast<float>(sy) / ch) * frame.h,
+                                       (static_cast<float>(sw) / cw) * frame.w,
+                                       (static_cast<float>(sh) / ch) * frame.h};
                 list.image(sub_tex, placed, gfx::kFullUv, Color::rgb(0xffffff));
             }
         }
@@ -5217,6 +5274,10 @@ class Fnvideo final : public app::Concept
         std::string about = "飞牛影视 ";
         about += version_.empty() ? std::string("版本未知") : version_;
         about += " · 作者 Naye · QQ群 310630593 · 界面框架 ps5-homebrew-ui";
+        // The repo sits on its own second line: squeezed into the same row as
+        // the name and version it survives only to the ellipsis, and a
+        // truncated URL is worse than no URL.
+        const std::string about_url = "项目主页 https://github.com/naye1120/fnvideo-ps5";
         // Show what the worker actually has, but prefer the drafts the user is
         // mid-edit on: the form is where a wrong address gets noticed, and it
         // must reflect what will be sent on 登录.
@@ -5264,9 +5325,23 @@ class Fnvideo final : public app::Concept
             }
             ui::text(list, glyphs_.semibold, rows[i], panel.x + 48.0f, y + 34.0f, 22.0f,
                      hot ? kInk : kMuted);
-            fit_text(list, glyphs_.regular, values[i], panel.x + 300.0f, y + 34.0f, 19.0f,
-                     hot ? kInk.with_alpha(0.9f) : kMuted.with_alpha(0.62f),
-                     panel.w - 300.0f - 98.0f);
+            if (i == kSettingsRows - 1)
+            {
+                // 关于 owns two baselines in its row (name/version, then the
+                // repo); every other value is one line at the label's height.
+                fit_text(list, glyphs_.regular, values[i], panel.x + 300.0f, y + 26.0f, 19.0f,
+                         hot ? kInk.with_alpha(0.9f) : kMuted.with_alpha(0.62f),
+                         panel.w - 300.0f - 98.0f);
+                fit_text(list, glyphs_.regular, about_url, panel.x + 300.0f, y + 52.0f, 16.0f,
+                         hot ? kInk.with_alpha(0.9f) : kMuted.with_alpha(0.62f),
+                         panel.w - 300.0f - 98.0f);
+            }
+            else
+            {
+                fit_text(list, glyphs_.regular, values[i], panel.x + 300.0f, y + 34.0f, 19.0f,
+                         hot ? kInk.with_alpha(0.9f) : kMuted.with_alpha(0.62f),
+                         panel.w - 300.0f - 98.0f);
+            }
             // Only the three text rows open the keyboard; a chevron on 登录 /
             // 缓存 / 关于 would promise an edit that does not exist.
             if (i <= 2)
@@ -6985,6 +7060,11 @@ class Fnvideo final : public app::Concept
     float stick_hud_timer_ = 0.0f;
     std::string stick_hud_text_;
     float stick_hud_fraction_ = 0.0f;
+    // L1/R1 长按连发状态：shoulder_key_ 记住当前按住的是哪个肩键，
+    // shoulder_hold_ 是距下一次允许续跳的剩余时间（秒）。按下当帧立即跳，
+    // 之后越过起始延迟后每到一个连发间隔补跳，与左摇杆节奏一致。
+    Action shoulder_key_ = Action::count;
+    float shoulder_hold_ = 0.0f;
     std::string search_input_; // the 搜索 shelf's query, searched case-insensitively
     bool search_edit_ = false; // true while the search keyboard is open
     float position_ = 0.0f;

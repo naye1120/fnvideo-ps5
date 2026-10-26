@@ -75,8 +75,8 @@ bool load_font(hui::gfx::Renderer &renderer, const std::string &path, hui::gfx::
                hui::ui::FontRef *ref)
 {
     std::string data;
-    // 48 MiB, not read_file's 4 MiB default: the Han atlas is 22 MB.
-    if (!hui::save::read_file(path, &data, 48u << 20) || !font->load(data))
+    // 96 MiB, not read_file's 4 MiB default: the full-CJK Han atlas is ~63 MB.
+    if (!hui::save::read_file(path, &data, 96u << 20) || !font->load(data))
     {
         std::fprintf(stderr, "cannot load font %s\n", path.c_str());
         return false;

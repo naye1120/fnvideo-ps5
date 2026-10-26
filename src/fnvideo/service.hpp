@@ -217,6 +217,18 @@ class Service
     float volume() const;
     void set_brightness(float brightness);
     float brightness() const;
+    // Inputs for the controller's ambient light while a film plays: the mean
+    // colour of the picture on screen (0xRRGGBB, 0 = unknown - opening, or
+    // ICtCp planes) and the newest audio peak (0..1). Straight out of the
+    // player's atomics; the main loop reads both once per frame.
+    std::uint32_t video_light() const
+    {
+        return player_.video_light();
+    }
+    float audio_level() const
+    {
+        return player_.audio_level();
+    }
     // Embedded tracks of the file that is open. Empty until its header has
     // been read. The toolbar lists these; selecting an audio track reopens the
     // ticket at the current second, which is the only way FFmpeg can switch

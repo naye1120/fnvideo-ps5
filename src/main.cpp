@@ -28,6 +28,8 @@
 #include <cstring>
 #include <GL/glcorearb.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -155,9 +157,9 @@ bool load_font(hui::gfx::Renderer &renderer, const char *name, hui::gfx::Font *f
 {
     std::string data;
     const std::string path = std::string(kAssets) + "/fonts/" + name;
-    // 48 MiB, not read_file's 4 MiB default: the Han atlas is 22 MB, and a
-    // rejected read silently leaves Chinese to the Latin faces.
-    if (!hui::save::read_file(path, &data, 48u << 20) || !font->load(data))
+    // 96 MiB, not read_file's 4 MiB default: the full-CJK Han atlas is ~63 MB,
+    // and a rejected read silently leaves Chinese to the Latin faces.
+    if (!hui::save::read_file(path, &data, 96u << 20) || !font->load(data))
     {
         hui::sys::log("[HUI] font %s failed: %s", name, font->error().c_str());
         return false;
@@ -343,6 +345,10 @@ int main()
     // The FPS readout averages over half a second so the number is readable.
     double fps_seconds = 0.0;
     int fps_frames = 0;
+    // The controller light's brightness envelope (0..1) and the 50 ms clock
+    // that keeps scePadSetLightBar off the every-frame path.
+    float light_env = 0.0f;
+    float light_clock = 0.0f;
     PadSample samples[64];
     gfx::Canvas capture;
     // A picture of the screen, written where it survives the title closing.
@@ -409,10 +415,52 @@ int main()
         pad.tick(dt);
         if (shell.settings().light_bar)
         {
-            const gfx::Color accent = shell.accent();
-            pad.set_light_bar(static_cast<std::uint8_t>(accent.r * 255.0f),
-                              static_cast<std::uint8_t>(accent.g * 255.0f),
-                              static_cast<std::uint8_t>(accent.b * 255.0f));
+            // Ambient mode: while a film is on screen the bar takes the
+            // picture's mean colour and breathes with the sound; otherwise it
+            // follows the design's accent as before. The envelope attacks on
+            // the newest peak and fades over about half a second, so dialogue
+            // and explosions move the lamp and quiet scenes let it dim.
+            const std::uint32_t tint =
+                video_pb.playing ? fnvideo::Service::instance().video_light() : 0u;
+            if (tint != 0u)
+            {
+                const float level = fnvideo::Service::instance().audio_level();
+                if (level > light_env)
+                    light_env = level;
+                else
+                    light_env += (level - light_env) * std::min(1.0f, dt * 4.0f);
+            }
+            else
+            {
+                light_env = 0.0f;
+            }
+            light_clock += dt;
+            if (light_clock >= 0.05f)
+            {
+                light_clock = 0.0f;
+                if (tint != 0u)
+                {
+                    // Film peaks sit well under 1.0 in the mix; stretch what
+                    // is there across the range and keep a floor so a dark
+                    // and quiet scene glows instead of dying out entirely.
+                    const float bright =
+                        0.15f + 0.85f * std::sqrt(std::clamp(light_env * 3.0f, 0.0f, 1.0f));
+                    const auto channel = [bright, tint](unsigned shift) -> std::uint8_t
+                    {
+                        const float v =
+                            static_cast<float>((tint >> shift) & 0xFFu) / 255.0f * bright;
+                        return static_cast<std::uint8_t>(std::clamp(v, 0.0f, 1.0f) * 255.0f);
+                    };
+                    pad.set_light_bar(channel(16), channel(8), channel(0));
+                }
+                else
+                {
+                    const gfx::Color accent = shell.accent();
+                    pad.set_light_bar(static_cast<std::uint8_t>(accent.r * 255.0f),
+                                      static_cast<std::uint8_t>(accent.g * 255.0f),
+                                      static_cast<std::uint8_t>(accent.b * 255.0f));
+                }
+            }
         }
 
         // Queue the design's backdrop, scene and chrome before presenting.
