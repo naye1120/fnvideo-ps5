@@ -537,6 +537,14 @@ class Player
     std::array<float, 9> upload_to_rgb_{};
     bool upload_colour_valid_ = false;
     std::uint32_t upload_lut_version_ = 0;
+    // Monotone watermark for the forward-only curve bind: the pts of the curve
+    // currently on screen, and whether anything is applied yet. A candidate
+    // curve is only taken when it advances this, which damps the +/-1 frame pts
+    // jitter from B-frame reorder so a picture is never re-painted with an
+    // earlier scene's chroma (the flash). Cleared when the picture's own pts
+    // jumps backwards (a seek or a new film).
+    std::int64_t applied_curve_pts_ = INT64_MIN;
+    bool curve_applied_ = false;
     // How many pictures this session has handed to the GPU, for the first few
     // lines of upload diagnostics.
     int uploads_ = 0;

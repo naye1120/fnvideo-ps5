@@ -262,6 +262,18 @@ constexpr std::int64_t kOpenDeadlineUs = 20 * 1000 * 1000;
 // queue and the B-frame reorder depth, so 24 is generous and its memory cost
 // (24 x ~12 KB) is negligible.
 constexpr std::size_t kMaxCurveStamps = 24;
+// TEMPORARY A/B PROBE for the "occasional colour flash" investigation. When
+// true, a chroma (Ct/Cp) curve is only re-published at a scene boundary - i.e.
+// when the luma curve or the colour matrices move - and the film's per-frame
+// chroma modulation between scenes is frozen to the scene's first table.
+// RESULT (real machine, 抓特务): never fired - the luma curve moves on every
+// frame too, so there is no chroma-only intra-scene window to freeze, and the
+// flash was NOT the film's gentle per-frame modulation. The real cause was the
+// backwards re-binding in the render pick (see the forward-only bind in frame()
+// and the dv swap version-went-backwards / dC-up-to-0.14 log evidence). Probe
+// left in but disabled; keep false so other sources' chroma-only RPUs still
+// publish faithfully.
+constexpr bool kDoviHoldChromaWithinScene = false;
 // How much of the head of the file ffmpeg may read to work out what it is,
 // and how long it may spend doing so. Both are budgets, not targets: a normal
 // MP4 answers from its first few hundred KB, and anything that would need
@@ -1558,6 +1570,12 @@ void Player::decode()
     bool dovi_reported = false;
     bool dovi_probed = false;
     std::uint32_t dovi_signature = 0; // reshaping curve, as last turned into a table
+    // Scene boundary for the kDoviHoldChromaWithinScene probe: a hash of the
+    // luma curve + colour matrices only, so a chroma-only change is recognised
+    // as "still the same scene" and its curve is held back.
+    std::uint32_t dovi_scene_signature = 0;
+    bool dovi_scene_init = false;
+    [[maybe_unused]] int dovi_chroma_hold_skips = 0;
 
     // The software decoder, opened either as the primary path or as the
     // fallback when the hardware one refuses the stream or fails mid-film.
@@ -3380,6 +3398,11 @@ void Player::decode()
                             std::uint32_t signature =
                                 static_cast<std::uint32_t>(curve.coef_log2_denom) * 131u +
                                 static_cast<std::uint32_t>(curve.full_range ? 1 : 0);
+                            // Scene-boundary hash for the A/B probe: folds in
+                            // only the luma curve (c==0) and the colour step, so
+                            // a chroma-only move between frames leaves it
+                            // untouched and is recognised as "same scene".
+                            std::uint32_t scene_sig = signature;
                             // All three components, not only luma: some RPUs
                             // move only a chroma curve, and a stale table for
                             // those leaves a colour cast until the next scene.
@@ -3399,32 +3422,65 @@ void Player::decode()
                                                     static_cast<std::uint32_t>(curve.coef[c][i][k]);
                                     }
                                 }
+                                if (c == 0)
+                                {
+                                    scene_sig = scene_sig * 31u +
+                                                static_cast<std::uint32_t>(curve.num_pivots[c]);
+                                    for (int i = 0; i < curve.num_pivots[c] && i < 9; ++i)
+                                    {
+                                        scene_sig = scene_sig * 31u + curve.pivots[c][i];
+                                    }
+                                    for (int i = 0; i + 1 < curve.num_pivots[c] && i < 8; ++i)
+                                    {
+                                        for (int k = 0; k < 3; ++k)
+                                        {
+                                            scene_sig = scene_sig * 31u +
+                                                        static_cast<std::uint32_t>(
+                                                            curve.coef[c][i][k]);
+                                        }
+                                    }
+                                }
                             }
                             signature = signature * 31u + (curve.has_colour_step ? 1u : 0u);
+                            scene_sig = scene_sig * 31u + (curve.has_colour_step ? 1u : 0u);
                             // The colour step is part of the same publish, so it
                             // is hashed too: an RPU that only changes the
-                            // matrices must still reach the GPU.
+                            // matrices must still reach the GPU. The scene hash
+                            // carries it as well - a matrix move is a scene move.
                             for (float value : curve.lms_from_ycc)
                             {
                                 std::uint32_t bits = 0;
                                 std::memcpy(&bits, &value, sizeof(bits));
                                 signature = signature * 31u + bits;
+                                scene_sig = scene_sig * 31u + bits;
                             }
                             for (float value : curve.rgb_from_lms)
                             {
                                 std::uint32_t bits = 0;
                                 std::memcpy(&bits, &value, sizeof(bits));
                                 signature = signature * 31u + bits;
+                                scene_sig = scene_sig * 31u + bits;
                             }
                             for (float value : curve.ycc_to_rgb_offset)
                             {
                                 std::uint32_t bits = 0;
                                 std::memcpy(&bits, &value, sizeof(bits));
                                 signature = signature * 31u + bits;
+                                scene_sig = scene_sig * 31u + bits;
                             }
-                            if (signature != dovi_signature)
+                            // A/B probe gate: with kDoviHoldChromaWithinScene on,
+                            // a curve whose luma + matrices are unchanged (same
+                            // scene) but whose chroma moved is held back, so the
+                            // film's per-frame Ct/Cp jitter never reaches the
+                            // GPU. Only a scene boundary re-publishes.
+                            const bool scene_changed =
+                                !dovi_scene_init || scene_sig != dovi_scene_signature;
+                            if (signature != dovi_signature &&
+                                (!kDoviHoldChromaWithinScene || scene_changed))
                             {
                                 dovi_signature = signature;
+                                dovi_scene_signature = scene_sig;
+                                dovi_scene_init = true;
                                 // Presentation pts of the packet carrying this
                                 // curve, so the render thread can hold it back
                                 // until the picture it belongs to is shown
@@ -3500,6 +3556,21 @@ void Player::decode()
                                 sys::log("[HUI] dv curve push v=%u pkt_pts=%lld table=%d",
                                          new_version, static_cast<long long>(curve_pts_us),
                                          static_cast<int>(dovi_curve_.size()));
+                            }
+                            else if (kDoviHoldChromaWithinScene && signature != dovi_signature)
+                            {
+                                // Same scene, chroma-only move: held back. Leave
+                                // dovi_signature on the last published scene so a
+                                // genuine scene change is still detected. Log the
+                                // first suppression and every 48th so the probe is
+                                // visibly active in the cold-start capture.
+                                if (++dovi_chroma_hold_skips == 1 ||
+                                    (dovi_chroma_hold_skips % 48) == 0)
+                                {
+                                    sys::log("[HUI] dv chroma-hold probe: held Ct/Cp, same scene "
+                                             "(suppressed=%d)",
+                                             dovi_chroma_hold_skips);
+                                }
                             }
                         }
                         if (!dovi_reported && dovi->ready())
@@ -3974,69 +4045,72 @@ std::uint32_t Player::frame(gfx::Renderer &renderer, int *width, int *height)
                 // the earliest published one rather than the newest.
                 picked = earliest;
             }
-            const std::uint32_t want_version =
-                picked != nullptr ? picked->version
-                                  : dovi_lut_version_.load(std::memory_order_relaxed);
-            if (want_version != upload_lut_version_)
+            // A backwards jump in the picture's own pts is a seek (or a new
+            // film); the monotone watermark no longer applies, so drop it and
+            // re-bind from scratch.
+            if (curve_applied_ && due.pts_us < applied_curve_pts_)
             {
-                // Diagnostic split: a scene-change flash is only visible when
-                // the curve this picture swaps to actually moves colour (Ct/Cp)
-                // or luma (Y), and it is only wrong when that curve's pts lags
-                // the picture it is painted on. Log the per-band delta and the
-                // pts lag so a colour flash can be told from a brightness flash
-                // by numbers, not by eye. upload_lut_ still holds the previous
-                // curve here, so the delta is against what was on screen.
-                if (picked != nullptr)
+                curve_applied_ = false;
+                applied_curve_pts_ = INT64_MIN;
+            }
+            // Forward-only, jitter-damped bind. Only move the picture to a new
+            // curve when that curve advances the timeline - its pts is strictly
+            // later than the curve already on screen. The RPU packets arrive in
+            // demux order tagged with presentation pts that jitter by up to a
+            // frame under B-frame reorder (dv push pts zig-zagged; dv swap saw
+            // version-went-backwards=91), so the old "newest pts <= frame" pick
+            // kept re-binding *backwards* onto the previous scene's curve and
+            // repainting a real frame with the wrong chroma (dC up to 0.14) -
+            // that was the colour flash. Holding the current curve whenever the
+            // candidate is at or before it removes the flash, while genuine
+            // scene cuts (larger pts) still land the frame they come due.
+            const CurveStamp *target = picked;
+            if (target != nullptr && curve_applied_ && target->pts_us <= applied_curve_pts_)
+            {
+                target = nullptr; // same scene or backwards: keep what is shown
+            }
+            if (target != nullptr && target->version != upload_lut_version_)
+            {
+                // Diagnostic split: log the per-band delta against what is on
+                // screen now and the pts lag, so a colour flash can be told from
+                // a brightness flash by numbers. upload_lut_ still holds the
+                // previous curve here, so the delta is against what was shown.
+                float d_y = 0.0f, d_c = 0.0f;
+                for (int i = 0; i < 1024; ++i)
                 {
-                    float d_y = 0.0f, d_c = 0.0f;
-                    for (int i = 0; i < 1024; ++i)
-                    {
-                        float dy = picked->lut[i] - upload_lut_[i];
-                        if (dy < 0.0f)
-                            dy = -dy;
-                        if (dy > d_y)
-                            d_y = dy;
-                        float tc = picked->lut[1024 + i] - upload_lut_[1024 + i];
-                        if (tc < 0.0f)
-                            tc = -tc;
-                        if (tc > d_c)
-                            d_c = tc;
-                        float pc = picked->lut[2048 + i] - upload_lut_[2048 + i];
-                        if (pc < 0.0f)
-                            pc = -pc;
-                        if (pc > d_c)
-                            d_c = pc;
-                    }
-                    sys::log("[HUI] dv swap ver=%u->%u lag=%lldms dY=%.4f dC=%.4f",
-                             upload_lut_version_, want_version,
-                             static_cast<long long>((due.pts_us - picked->pts_us) / 1000), d_y,
-                             d_c);
+                    float dy = target->lut[i] - upload_lut_[i];
+                    if (dy < 0.0f)
+                        dy = -dy;
+                    if (dy > d_y)
+                        d_y = dy;
+                    float tc = target->lut[1024 + i] - upload_lut_[1024 + i];
+                    if (tc < 0.0f)
+                        tc = -tc;
+                    if (tc > d_c)
+                        d_c = tc;
+                    float pc = target->lut[2048 + i] - upload_lut_[2048 + i];
+                    if (pc < 0.0f)
+                        pc = -pc;
+                    if (pc > d_c)
+                        d_c = pc;
                 }
-                if (picked != nullptr)
-                {
-                    upload_lut_ = picked->lut;
-                    upload_lut_valid_ = picked->lut_valid;
-                    upload_from_ycc_ = picked->from_ycc;
-                    upload_offset_ = picked->offset;
-                    upload_to_rgb_ = picked->to_rgb;
-                    upload_colour_valid_ = picked->colour_valid;
-                }
-                else
-                {
-                    // No curve table yet: fall back to the globals, which the
-                    // decode thread keeps as the newest published curve.
-                    upload_lut_ = dovi_lut_;
-                    upload_lut_valid_ = dovi_lut_valid_;
-                    upload_from_ycc_ = dovi_from_ycc_;
-                    upload_offset_ = dovi_offset_;
-                    upload_to_rgb_ = dovi_to_rgb_;
-                    upload_colour_valid_ = dovi_colour_valid_;
-                }
-                upload_lut_version_ = want_version;
+                sys::log("[HUI] dv swap ver=%u->%u lag=%lldms dY=%.4f dC=%.4f",
+                         upload_lut_version_, target->version,
+                         static_cast<long long>((due.pts_us - target->pts_us) / 1000), d_y, d_c);
+
+                upload_lut_ = target->lut;
+                upload_lut_valid_ = target->lut_valid;
+                upload_from_ycc_ = target->from_ycc;
+                upload_offset_ = target->offset;
+                upload_to_rgb_ = target->to_rgb;
+                upload_colour_valid_ = target->colour_valid;
+                applied_curve_pts_ = target->pts_us;
+                curve_applied_ = true;
+                upload_lut_version_ = target->version;
                 curve_updated = true;
                 sys::log("[HUI] dv curve use v=%u frame_pts=%lld picked_pts=%lld table=%d",
-                         want_version, static_cast<long long>(due.pts_us),
-                         picked != nullptr ? static_cast<long long>(picked->pts_us) : -1LL,
+                         target->version, static_cast<long long>(due.pts_us),
+                         static_cast<long long>(target->pts_us),
                          static_cast<int>(dovi_curve_.size()));
             }
 
